@@ -3,20 +3,56 @@
 <br/>
 </p>
 
-[![NuGet Badge](https://img.shields.io/nuget/dt/MQTTnet)](https://www.nuget.org/packages/MQTTnet)
-[![CI](https://github.com/dotnet/MQTTnet/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/dotnet/MQTTnet/actions/workflows/ci.yml)
-[![MyGet](https://img.shields.io/myget/mqttnet/v/mqttnet?color=orange&label=preview)](https://www.myget.org/feed/mqttnet/package/nuget/MQTTnet)
-![Size](https://img.shields.io/github/repo-size/dotnet/MQTTnet.svg)
-[![Join the chat at https://gitter.im/MQTTnet/community](https://badges.gitter.im/MQTTnet/community.svg)](https://gitter.im/MQTTnet/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://raw.githubusercontent.com/dotnet/MQTTnet/master/LICENSE)
+# BiharMQTT
 
-# MQTTnet
+**BiharMQTT is a fork of [MQTTnet](https://github.com/dotnet/MQTTnet)** — a high-performance .NET MQTT library — with modifications focused on eliminating heap allocations on the server publish hot path.
 
-MQTTnet is a high performance .NET library for MQTT based communication. It provides a MQTT client and a MQTT server (
-broker) and supports the MQTT protocol up to version 5. It is compatible with mostly any supported .NET Framework
-version and CPU architecture.
+> Upstream: [dotnet/MQTTnet](https://github.com/dotnet/MQTTnet) · License: MIT
 
-## Features
+---
+
+## What We Changed
+
+### Ring Buffer Message Store
+
+The server now uses a pre-allocated **ring buffer** (`MessageRingBuffer`) for all in-flight message payloads. Every PUBLISH payload is written into the ring buffer exactly once via `memcpy`; all downstream consumers (interceptors, subscriber fan-out, network write) reference that memory region via a ref-counted slot handle. When all consumers finish, the slot is freed and the write head advances.
+
+**Key changes from upstream MQTTnet:**
+
+| Area | Change |
+|---|---|
+| **Ring buffer core** | New `MessageRingBuffer`, `MessageSlot`, `MessageSlotMetadata` — pinned `byte[]` with semaphore-based back-pressure and ref-counted slot lifecycle |
+| **Zero-alloc inbound path** | Per-connection reusable body buffer in `MqttChannelAdapter` replaces `ArrayPool` renting; zero-copy payload slice in `MqttBufferReader` avoids decode-time copies |
+| **Direct packet dispatch** | Inbound PUBLISH packets dispatch directly to the ring buffer via `DispatchPublishPacketDirect`, bypassing `MqttApplicationMessage` allocation entirely |
+| **Outbound fan-out** | `DispatchViaRingBuffer` acquires a slot, copies payload once, and fans out to all subscribers sharing the same ring buffer memory; `MqttPacketBusItem.OnTerminated` releases the slot ref |
+| **Buffered injection API** | New `MqttBufferedApplicationMessage` + builder for memory-efficient server-side message injection |
+| **Buffered interceptor** | `InterceptingPublishBufferedEventArgs` provides `ReadOnlyMemory<byte>` payload views directly into ring buffer memory |
+| **Always-on** | The ring buffer is not optional — it is always active. Configure capacity/slots via `MqttServerOptions.RingBufferCapacityBytes` (default 256 MB) and `RingBufferMaxSlots` (default 65536) |
+| **Removed** | `SharedPooledPayloadBuffer` (ArrayPool-based fallback) deleted; `UseRingBuffer` opt-in flag removed |
+| **Packet inspector fix** | `MqttPacketInspector.FillReceiveBuffer` now accepts `(byte[], offset, count)` to avoid writing excess bytes from the reusable body buffer |
+
+### Allocation Profile (Server Hot Path)
+
+| Step | Upstream MQTTnet | BiharMQTT |
+|---|---|---|
+| Inbound body read | `ArrayPool.Rent` / `new byte[]` | Per-connection reusable buffer (zero alloc after warmup) |
+| Payload decode | `ReadRemainingData()` → `new byte[]` | `ReadRemainingDataSlice()` → zero-copy segment |
+| `MqttApplicationMessage` | Allocated per message | Skipped on ring buffer fast path |
+| Subscriber payload | Copied per subscriber | Shared ring buffer memory (ref-counted) |
+| Outbound write | `ReadOnlySequence` over copied `byte[]` | `ReadOnlySequence` over ring buffer region |
+
+### Configuration
+
+```csharp
+// Adjust ring buffer size (optional — defaults are 256 MB / 65536 slots)
+var server = new MqttServerOptionsBuilder()
+    .WithRingBuffer(capacityBytes: 128 * 1024 * 1024, maxSlots: 32768)
+    .Build();
+```
+
+---
+
+## Original MQTTnet Features
 
 ### General
 
@@ -56,15 +92,6 @@ channel. The app for verification is part of this repository and stored in _/Tes
 
 ## Getting Started
 
-MQTTnet is delivered via <b>NuGet</b> package manager. You can find the packages
-here: https://www.nuget.org/packages/MQTTnet/
-
-Use these command in the Package Manager console to install MQTTnet manually:
-
-```
-Install-Package MQTTnet
-```
-
 Samples for using MQTTnet are part of this repository. For starters these samples are recommended:
 
 - [Connect with a broker](https://github.com/dotnet/MQTTnet/blob/master/Samples/Client/Client_Connection_Samples.cs)
@@ -72,12 +99,10 @@ Samples for using MQTTnet are part of this repository. For starters these sample
 - [Publishing data](https://github.com/dotnet/MQTTnet/blob/master/Samples/Client/Client_Publish_Samples.cs)
 - [Host own broker](https://github.com/dotnet/MQTTnet/blob/master/Samples/Server/Server_Simple_Samples.cs)
 
-## Code of Conduct
+## License
 
-This project has adopted the code of conduct defined by the Contributor Covenant to clarify expected behavior in our
-community.
-For more information see the [.NET Foundation Code of Conduct](https://dotnetfoundation.org/code-of-conduct).
+This project is licensed under the [MIT License](LICENSE), same as the upstream MQTTnet project.
 
 ## .NET Foundation
 
-This project is supported by the [.NET Foundation](https://dotnetfoundation.org).
+The upstream MQTTnet project is supported by the [.NET Foundation](https://dotnetfoundation.org).
