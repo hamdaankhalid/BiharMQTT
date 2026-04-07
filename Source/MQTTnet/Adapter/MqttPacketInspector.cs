@@ -74,6 +74,16 @@ public sealed class MqttPacketInspector
         _receivedPacketBuffer?.Write(buffer, 0, buffer.Length);
     }
 
+    public void FillReceiveBuffer(byte[] buffer, int offset, int count)
+    {
+        if (!_asyncEvent.HasHandlers)
+        {
+            return;
+        }
+
+        _receivedPacketBuffer?.Write(buffer, offset, count);
+    }
+
     async Task InspectPacket(byte[] buffer, MqttPacketFlowDirection direction)
     {
         try

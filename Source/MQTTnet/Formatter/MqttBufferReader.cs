@@ -18,6 +18,13 @@ public sealed class MqttBufferReader
     int _offset;
     int _position;
 
+    /// <summary>
+    ///     When <c>true</c>, <see cref="ReadRemainingData" /> returns a zero-copy
+    ///     slice of the body buffer instead of allocating and copying.  The caller
+    ///     must ensure the body buffer outlives any references to the returned data.
+    /// </summary>
+    public bool UseZeroCopySlice { get; set; }
+
     public int BytesLeft => _maxPosition - _position;
 
     public bool EndOfStream => BytesLeft == 0;
@@ -71,6 +78,25 @@ public sealed class MqttBufferReader
         _position += bufferLength;
 
         return buffer;
+    }
+
+    /// <summary>
+    ///     Returns the remaining data as an <see cref="ArraySegment{T}" /> that
+    ///     references the existing body buffer directly — no allocation, no copy.
+    ///     The segment is only valid as long as the underlying body buffer is alive.
+    /// </summary>
+    public ArraySegment<byte> ReadRemainingDataSlice()
+    {
+        var bufferLength = BytesLeft;
+        if (bufferLength == 0)
+        {
+            return EmptyBuffer.ArraySegment;
+        }
+
+        var segment = new ArraySegment<byte>(_buffer, _position, bufferLength);
+        _position += bufferLength;
+
+        return segment;
     }
 
     public string ReadString()

@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using System.Buffers;
 using MQTTnet.Exceptions;
 using MQTTnet.Packets;
 
@@ -62,6 +63,31 @@ public static class MqttPublishPacketFactory
             TopicAlias = applicationMessage.TopicAlias,
             SubscriptionIdentifiers = applicationMessage.SubscriptionIdentifiers,
             UserProperties = applicationMessage.UserProperties
+        };
+
+        return packet;
+    }
+
+    /// <summary>
+    ///     Creates a publish packet from a buffered message using a pre-snapshotted payload.
+    ///     The caller must supply a <paramref name="payloadSnapshot" /> that outlives any
+    ///     enqueued packets (i.e. a copied byte[] rather than the caller's pooled buffer).
+    /// </summary>
+    public static MqttPublishPacket Create(MqttBufferedApplicationMessage message, ReadOnlySequence<byte> payloadSnapshot)
+    {
+        var packet = new MqttPublishPacket
+        {
+            Topic = message.Topic,
+            Payload = payloadSnapshot,
+            QualityOfServiceLevel = message.QualityOfServiceLevel,
+            Retain = message.Retain,
+            ContentType = message.ContentType,
+            CorrelationData = message.CorrelationData,
+            MessageExpiryInterval = message.MessageExpiryInterval,
+            PayloadFormatIndicator = message.PayloadFormatIndicator,
+            ResponseTopic = message.ResponseTopic,
+            SubscriptionIdentifiers = message.SubscriptionIdentifiers,
+            UserProperties = message.UserProperties
         };
 
         return packet;

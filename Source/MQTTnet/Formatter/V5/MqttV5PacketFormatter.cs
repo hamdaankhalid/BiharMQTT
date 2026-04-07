@@ -18,6 +18,11 @@ public sealed class MqttV5PacketFormatter : IMqttPacketFormatter
         _encoder = new MqttV5PacketEncoder(bufferWriter);
     }
 
+    /// <summary>
+    ///     Provides access to the decoder for configuring zero-copy decode.
+    /// </summary>
+    public MqttV5PacketDecoder Decoder => _decoder;
+
     public MqttPacket Decode(ReceivedMqttPacket receivedPacket)
     {
         return _decoder.Decode(receivedPacket);

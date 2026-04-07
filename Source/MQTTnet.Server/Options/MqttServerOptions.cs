@@ -21,6 +21,28 @@ public sealed class MqttServerOptions
     public MqttServerTlsTcpEndpointOptions TlsEndpointOptions { get; } = new();
 
     /// <summary>
+    ///     Gets or sets whether the pre-allocated ring buffer message store is enabled.
+    ///     When enabled, message payloads are stored in a fixed-size ring buffer to
+    ///     eliminate heap allocations on the publish hot path.
+    ///     Default is <c>false</c>.
+    /// </summary>
+    public bool UseRingBuffer { get; set; }
+
+    /// <summary>
+    ///     Gets or sets the total capacity of the message ring buffer in bytes.
+    ///     Only used when <see cref="UseRingBuffer" /> is <c>true</c>.
+    ///     Default is 256 MB.
+    /// </summary>
+    public int RingBufferCapacityBytes { get; set; } = 256 * 1024 * 1024;
+
+    /// <summary>
+    ///     Gets or sets the maximum number of concurrent in-flight message slots
+    ///     in the ring buffer.  Only used when <see cref="UseRingBuffer" /> is <c>true</c>.
+    ///     Default is 65536.
+    /// </summary>
+    public int RingBufferMaxSlots { get; set; } = 65536;
+
+    /// <summary>
     ///     Gets or sets the default and initial size of the packet write buffer.
     ///     It is recommended to set this to a value close to the usual expected packet size * 1.5.
     ///     Do not change this value when no memory issues are experienced.

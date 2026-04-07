@@ -13,6 +13,11 @@ public sealed class MqttV5PacketDecoder
 {
     readonly MqttBufferReader _bufferReader = new();
 
+    /// <summary>
+    ///     Provides access to the buffer reader for configuring zero-copy decode.
+    /// </summary>
+    public MqttBufferReader BufferReader => _bufferReader;
+
     public MqttPacket Decode(ReceivedMqttPacket receivedMqttPacket)
     {
         if (receivedMqttPacket.TotalLength == 0)
@@ -521,7 +526,9 @@ public sealed class MqttV5PacketDecoder
 
         if (!_bufferReader.EndOfStream)
         {
-            packet.PayloadSegment = new ArraySegment<byte>(_bufferReader.ReadRemainingData());
+            packet.PayloadSegment = _bufferReader.UseZeroCopySlice
+                ? _bufferReader.ReadRemainingDataSlice()
+                : new ArraySegment<byte>(_bufferReader.ReadRemainingData());
         }
 
         return packet;

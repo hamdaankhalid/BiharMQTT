@@ -31,6 +31,14 @@ public sealed class MqttPacketFormatterAdapter
 
     public MqttProtocolVersion ProtocolVersion { get; private set; } = MqttProtocolVersion.Unknown;
 
+    /// <summary>
+    ///     When <c>true</c>, PUBLISH payload decode returns a zero-copy slice of the
+    ///     body buffer instead of allocating and copying.  Only safe when the caller
+    ///     guarantees the body buffer outlives the decoded payload reference (e.g. the
+    ///     server ring buffer path copies the payload before the next packet is read).
+    /// </summary>
+    public bool UseZeroCopyPayloadDecode { get; set; }
+
     public void Cleanup()
     {
         _bufferWriter.Cleanup();
@@ -134,5 +142,23 @@ public sealed class MqttPacketFormatterAdapter
 
         ProtocolVersion = protocolVersion;
         _formatter = GetMqttPacketFormatter(protocolVersion, _bufferWriter);
+
+        if (UseZeroCopyPayloadDecode)
+        {
+            ApplyZeroCopyFlag(_formatter);
+        }
+    }
+
+    static void ApplyZeroCopyFlag(IMqttPacketFormatter formatter)
+    {
+        switch (formatter)
+        {
+            case MqttV3PacketFormatter v3:
+                v3.BufferReader.UseZeroCopySlice = true;
+                break;
+            case MqttV5PacketFormatter v5:
+                v5.Decoder.BufferReader.UseZeroCopySlice = true;
+                break;
+        }
     }
 }

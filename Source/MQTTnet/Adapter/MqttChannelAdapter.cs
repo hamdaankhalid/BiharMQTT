@@ -27,6 +27,12 @@ public sealed class MqttChannelAdapter : Disposable, IMqttChannelAdapter
     readonly byte[] _singleByteBuffer = new byte[1];
     readonly AsyncLock _syncRoot = new();
 
+    // Per-connection reusable body buffer. Grows to the high-water mark of
+    // incoming packet sizes and is reused for every subsequent packet on this
+    // connection. No pool contention, no bucket lookup, zero allocation after
+    // warmup. Safe because the receive loop is sequential per connection.
+    byte[] _reusableBodyBuffer = new byte[ReadBufferSize];
+
     Statistics _statistics; // mutable struct, don't make readonly!
 
     public MqttChannelAdapter(IMqttChannel channel, MqttPacketFormatterAdapter packetFormatterAdapter, IMqttNetLogger logger)
@@ -400,7 +406,15 @@ public sealed class MqttChannelAdapter : Disposable, IMqttChannelAdapter
         }
 
         var bodyLength = fixedHeader.RemainingLength;
-        var body = new byte[bodyLength];
+
+        // Reuse the per-connection body buffer; grow it if this packet is larger
+        // than anything we've seen on this connection so far.
+        if (_reusableBodyBuffer.Length < bodyLength)
+        {
+            _reusableBodyBuffer = GC.AllocateUninitializedArray<byte>(bodyLength);
+        }
+
+        var body = _reusableBodyBuffer;
 
         var bodyOffset = 0;
         var chunkSize = Math.Min(ReadBufferSize, bodyLength);
@@ -428,7 +442,7 @@ public sealed class MqttChannelAdapter : Disposable, IMqttChannelAdapter
             bodyOffset += readBytes;
         } while (bodyOffset < bodyLength);
 
-        PacketInspector?.FillReceiveBuffer(body);
+        PacketInspector?.FillReceiveBuffer(body, 0, bodyLength);
 
         var bodySegment = new ArraySegment<byte>(body, 0, bodyLength);
         return new ReceivedMqttPacket(fixedHeader.Flags, bodySegment, fixedHeader.TotalLength);

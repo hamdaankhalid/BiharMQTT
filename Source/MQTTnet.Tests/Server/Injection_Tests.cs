@@ -449,4 +449,150 @@ public sealed class Injection_Tests : BaseTestClass
 
         Assert.IsNotNull(interceptedMessage);
     }
+
+    [TestMethod]
+    public async Task Inject_Buffered_ApplicationMessage_At_Server_Level()
+    {
+        using var testEnvironment = CreateTestEnvironment();
+
+        var server = await testEnvironment.StartServer();
+
+        var receiver = await testEnvironment.ConnectClient();
+
+        var messageReceivedHandler = testEnvironment.CreateApplicationMessageHandler(receiver);
+
+        await receiver.SubscribeAsync("#");
+
+        var payload = "hello"u8.ToArray();
+
+        await server.InjectApplicationMessage(
+            new MqttBufferedApplicationMessage
+            {
+                Topic = "InjectedBuffered",
+                Payload = payload,
+                QualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce
+            });
+
+        await LongTestDelay();
+
+        Assert.HasCount(1, messageReceivedHandler.ReceivedEventArgs);
+        Assert.AreEqual("InjectedBuffered", messageReceivedHandler.ReceivedEventArgs[0].ApplicationMessage.Topic);
+    }
+
+    [TestMethod]
+    public async Task Inject_Buffered_ApplicationMessage_With_Pooled_Memory()
+    {
+        using var testEnvironment = CreateTestEnvironment();
+
+        var server = await testEnvironment.StartServer();
+
+        var receiver = await testEnvironment.ConnectClient();
+
+        var messageReceivedHandler = testEnvironment.CreateApplicationMessageHandler(receiver);
+
+        await receiver.SubscribeAsync("#");
+
+        // Simulate pooled buffer usage
+        var pool = System.Buffers.ArrayPool<byte>.Shared;
+        var buffer = pool.Rent(64);
+        var written = System.Text.Encoding.UTF8.GetBytes("pooled payload", buffer);
+
+        await server.InjectApplicationMessage(
+            new MqttBufferedApplicationMessage
+            {
+                Topic = "PooledTopic",
+                Payload = buffer.AsMemory(0, written)
+            });
+
+        // Buffer can be returned immediately after inject completes
+        pool.Return(buffer);
+
+        await LongTestDelay();
+
+        Assert.HasCount(1, messageReceivedHandler.ReceivedEventArgs);
+        Assert.AreEqual("PooledTopic", messageReceivedHandler.ReceivedEventArgs[0].ApplicationMessage.Topic);
+    }
+
+    [TestMethod]
+    public async Task Inject_Buffered_ApplicationMessage_With_Builder()
+    {
+        using var testEnvironment = CreateTestEnvironment();
+
+        var server = await testEnvironment.StartServer();
+
+        var receiver = await testEnvironment.ConnectClient();
+
+        var messageReceivedHandler = testEnvironment.CreateApplicationMessageHandler(receiver);
+
+        await receiver.SubscribeAsync("#");
+
+        var builder = new MqttBufferedApplicationMessageBuilder()
+            .WithTopic("BuilderTopic")
+            .WithPayload("builder payload"u8.ToArray())
+            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce);
+
+        await server.InjectApplicationMessage(builder.Build());
+
+        await LongTestDelay();
+
+        Assert.HasCount(1, messageReceivedHandler.ReceivedEventArgs);
+        Assert.AreEqual("BuilderTopic", messageReceivedHandler.ReceivedEventArgs[0].ApplicationMessage.Topic);
+    }
+
+    [TestMethod]
+    public async Task Inject_Buffered_ApplicationMessage_Falls_Back_With_Interceptor()
+    {
+        using var testEnvironment = CreateTestEnvironment();
+
+        var server = await testEnvironment.StartServer();
+
+        MqttApplicationMessage interceptedMessage = null;
+        server.InterceptingPublishAsync += eventArgs =>
+        {
+            interceptedMessage = eventArgs.ApplicationMessage;
+            return CompletedTask.Instance;
+        };
+
+        var receiver = await testEnvironment.ConnectClient();
+        var messageReceivedHandler = testEnvironment.CreateApplicationMessageHandler(receiver);
+        await receiver.SubscribeAsync("#");
+
+        await server.InjectApplicationMessage(
+            new MqttBufferedApplicationMessage
+            {
+                Topic = "InterceptedBuffered",
+                Payload = "test"u8.ToArray()
+            });
+
+        await LongTestDelay();
+
+        // The interceptor should have received a materialized MqttApplicationMessage
+        Assert.IsNotNull(interceptedMessage);
+        Assert.AreEqual("InterceptedBuffered", interceptedMessage.Topic);
+
+        // And the subscriber should still receive the message
+        Assert.HasCount(1, messageReceivedHandler.ReceivedEventArgs);
+    }
+
+    [TestMethod]
+    public async Task Inject_Buffered_ApplicationMessage_Extension_Method()
+    {
+        using var testEnvironment = CreateTestEnvironment();
+
+        var server = await testEnvironment.StartServer();
+
+        var receiver = await testEnvironment.ConnectClient();
+
+        var messageReceivedHandler = testEnvironment.CreateApplicationMessageHandler(receiver);
+
+        await receiver.SubscribeAsync("#");
+
+        var payload = System.Text.Encoding.UTF8.GetBytes("extension payload");
+        await server.InjectApplicationMessage("ExtTopic", (ReadOnlyMemory<byte>)payload);
+
+        await LongTestDelay();
+
+        Assert.HasCount(1, messageReceivedHandler.ReceivedEventArgs);
+        Assert.AreEqual("ExtTopic", messageReceivedHandler.ReceivedEventArgs[0].ApplicationMessage.Topic);
+    }
 }

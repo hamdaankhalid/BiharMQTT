@@ -217,10 +217,22 @@ public sealed class MqttConnectedClient : IDisposable
     {
         HandleTopicAlias(publishPacket);
 
-        var applicationMessage = MqttApplicationMessageFactory.Create(publishPacket);
+        DispatchApplicationMessageResult dispatchApplicationMessageResult;
 
-        var dispatchApplicationMessageResult =
-            await _sessionsManager.DispatchApplicationMessage(Id, UserName, Session.Items, applicationMessage, cancellationToken).ConfigureAwait(false);
+        // When the ring buffer fast-path is available and the message is not
+        // retained, dispatch directly from the MqttPublishPacket — this skips
+        // the MqttApplicationMessage allocation entirely.
+        if (!publishPacket.Retain && _sessionsManager.IsRingBufferFastPathAvailable)
+        {
+            dispatchApplicationMessageResult =
+                await _sessionsManager.DispatchPublishPacketDirect(Id, publishPacket, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            var applicationMessage = MqttApplicationMessageFactory.Create(publishPacket);
+            dispatchApplicationMessageResult =
+                await _sessionsManager.DispatchApplicationMessage(Id, UserName, Session.Items, applicationMessage, cancellationToken).ConfigureAwait(false);
+        }
 
         if (dispatchApplicationMessageResult.CloseConnection)
         {

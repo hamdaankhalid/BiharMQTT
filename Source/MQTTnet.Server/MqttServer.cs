@@ -22,6 +22,7 @@ public class MqttServer : Disposable
     readonly MqttNetSourceLogger _logger;
     readonly MqttServerOptions _options;
     readonly MqttRetainedMessagesManager _retainedMessagesManager;
+    readonly MessageRingBuffer _ringBuffer;
     readonly IMqttNetLogger _rootLogger;
 
     CancellationTokenSource _cancellationTokenSource;
@@ -38,8 +39,13 @@ public class MqttServer : Disposable
         _rootLogger = logger ?? throw new ArgumentNullException(nameof(logger));
         _logger = logger.WithSource(nameof(MqttServer));
 
+        if (options.UseRingBuffer)
+        {
+            _ringBuffer = new MessageRingBuffer(options.RingBufferCapacityBytes, options.RingBufferMaxSlots);
+        }
+
         _retainedMessagesManager = new MqttRetainedMessagesManager(_eventContainer, _rootLogger);
-        _clientSessionsManager = new MqttClientSessionsManager(options, _retainedMessagesManager, _eventContainer, _rootLogger);
+        _clientSessionsManager = new MqttClientSessionsManager(options, _retainedMessagesManager, _eventContainer, _rootLogger, _ringBuffer);
         _keepAliveMonitor = new MqttServerKeepAliveMonitor(options, _clientSessionsManager, _rootLogger);
     }
 
@@ -107,6 +113,22 @@ public class MqttServer : Disposable
     {
         add => _eventContainer.InterceptingPublishEvent.AddHandler(value);
         remove => _eventContainer.InterceptingPublishEvent.RemoveHandler(value);
+    }
+
+    /// <summary>
+    ///     Fired when the ring buffer dispatch path is active.  The event args expose
+    ///     the payload as <see cref="ReadOnlyMemory{T}" /> pointing directly into ring
+    ///     buffer memory.
+    ///     <para>
+    ///         <b>IMPORTANT</b>: The payload memory is only valid during the callback.
+    ///         Do NOT store the <c>ReadOnlyMemory&lt;byte&gt;</c> reference beyond the
+    ///         callback return.  Call <c>.ToArray()</c> if you need a persistent copy.
+    ///     </para>
+    /// </summary>
+    public event Func<InterceptingPublishBufferedEventArgs, Task> InterceptingPublishBufferedAsync
+    {
+        add => _eventContainer.InterceptingPublishBufferedEvent.AddHandler(value);
+        remove => _eventContainer.InterceptingPublishBufferedEvent.RemoveHandler(value);
     }
 
     public event Func<InterceptingSubscriptionEventArgs, Task> InterceptingSubscriptionAsync
@@ -183,6 +205,29 @@ public class MqttServer : Disposable
     public bool AcceptNewConnections { get; set; } = true;
 
     public bool IsStarted => _cancellationTokenSource != null;
+
+    /// <summary>
+    ///     Gets whether the ring buffer message store is enabled.
+    /// </summary>
+    public bool IsRingBufferEnabled => _ringBuffer != null;
+
+    /// <summary>
+    ///     Gets ring buffer diagnostic counters. Returns <c>null</c> if the ring buffer is not enabled.
+    /// </summary>
+    public MessageRingBufferDiagnostics GetRingBufferDiagnostics()
+    {
+        if (_ringBuffer == null)
+        {
+            return null;
+        }
+
+        return new MessageRingBufferDiagnostics
+        {
+            CapacityBytes = _ringBuffer.Capacity,
+            TotalAcquired = _ringBuffer.TotalAcquired,
+            TotalReleased = _ringBuffer.TotalReleased
+        };
+    }
 
     /// <summary>
     ///     Gives access to the session items which belong to this server. This session items are passed
@@ -265,6 +310,38 @@ public class MqttServer : Disposable
             injectedApplicationMessage.SenderUserName,
             sessionItems,
             injectedApplicationMessage.ApplicationMessage,
+            cancellationToken);
+    }
+
+    /// <summary>
+    ///     Injects an application message using a stack-allocated <see cref="MqttBufferedApplicationMessage" />.
+    ///     This overload avoids the heap allocations of <see cref="InjectedMqttApplicationMessage" /> and
+    ///     <see cref="MqttApplicationMessage" /> and allows the caller to supply a pooled
+    ///     <see cref="ReadOnlyMemory{T}" /> payload that can be reclaimed once this method completes.
+    /// </summary>
+    public Task InjectApplicationMessage(
+        MqttBufferedApplicationMessage message,
+        string senderClientId = "",
+        string senderUserName = null,
+        IDictionary customSessionItems = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(message.Topic))
+        {
+            throw new NotSupportedException("Injected application messages must contain a topic (topic alias is not supported)");
+        }
+
+        MqttTopicValidator.ThrowIfInvalid(message.Topic);
+
+        ThrowIfNotStarted();
+
+        var sessionItems = customSessionItems ?? ServerSessionItems;
+
+        return _clientSessionsManager.DispatchApplicationMessage(
+            senderClientId ?? string.Empty,
+            senderUserName,
+            sessionItems,
+            message,
             cancellationToken);
     }
 
@@ -373,6 +450,8 @@ public class MqttServer : Disposable
             {
                 adapter.Dispose();
             }
+
+            _ringBuffer?.Dispose();
         }
 
         base.Dispose(disposing);

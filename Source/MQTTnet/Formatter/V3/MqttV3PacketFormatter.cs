@@ -27,6 +27,11 @@ public sealed class MqttV3PacketFormatter : IMqttPacketFormatter
         _mqttProtocolVersion = mqttProtocolVersion;
     }
 
+    /// <summary>
+    ///     Provides access to the buffer reader for configuring zero-copy decode.
+    /// </summary>
+    public MqttBufferReader BufferReader => _bufferReader;
+
     public MqttPacket Decode(ReceivedMqttPacket receivedPacket)
     {
         if (receivedPacket.TotalLength == 0)
@@ -271,7 +276,9 @@ public sealed class MqttV3PacketFormatter : IMqttPacketFormatter
 
         if (!_bufferReader.EndOfStream)
         {
-            packet.PayloadSegment = new ArraySegment<byte>(_bufferReader.ReadRemainingData());
+            packet.PayloadSegment = _bufferReader.UseZeroCopySlice
+                ? _bufferReader.ReadRemainingDataSlice()
+                : new ArraySegment<byte>(_bufferReader.ReadRemainingData());
         }
 
         return packet;

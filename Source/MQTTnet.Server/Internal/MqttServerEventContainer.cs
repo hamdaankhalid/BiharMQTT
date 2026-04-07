@@ -32,6 +32,8 @@ public class MqttServerEventContainer
 
     public AsyncEvent<InterceptingPublishEventArgs> InterceptingPublishEvent { get; } = new();
 
+    public AsyncEvent<InterceptingPublishBufferedEventArgs> InterceptingPublishBufferedEvent { get; } = new();
+
     public AsyncEvent<InterceptingSubscriptionEventArgs> InterceptingSubscriptionEvent { get; } = new();
 
     public AsyncEvent<InterceptingUnsubscriptionEventArgs> InterceptingUnsubscriptionEvent { get; } = new();
