@@ -1,10 +1,10 @@
 <Project>
     <PropertyGroup>
         <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
-        <Product>MQTTnet</Product>
-        <Authors>The contributors of MQTTnet</Authors>
-        <Company>The contributors of MQTTnet</Company>
-        <Copyright>Copyright (c) .NET Foundation and Contributors</Copyright>
+        <Product>BiharMQTT</Product>
+        <Authors>hamdaankhalid</Authors>
+        <Company>hamdaankhalid</Company>
+        <Copyright>Copyright (c) hamdaankhalid. Based on MQTTnet by .NET Foundation and Contributors.</Copyright>
 
         <DelaySign>false</DelaySign>
         <SignAssembly>false</SignAssembly>
@@ -33,9 +33,8 @@
 
     <PropertyGroup Condition="'$(GeneratePackageOnBuild)'=='true'">
         <PackageLicenseFile>LICENSE</PackageLicenseFile>
-        <PackageIcon>nuget.png</PackageIcon>
-        <PackageProjectUrl>https://github.com/dotnet/MQTTnet</PackageProjectUrl>
-        <RepositoryUrl>https://github.com/dotnet/MQTTnet.git</RepositoryUrl>
+        <PackageProjectUrl>https://github.com/hamdaankhalid/BiharMQTT</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/hamdaankhalid/BiharMQTT.git</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
         <IncludeSymbols>true</IncludeSymbols>
         <SymbolPackageFormat>snupkg</SymbolPackageFormat>
@@ -45,7 +44,6 @@
 
     <ItemGroup Condition="'$(GeneratePackageOnBuild)'=='true'">
         <None Include="README.md" Pack="true" PackagePath="" Condition="Exists('README.md')" />
-        <None Include="..\..\Images\nuget.png" Pack="true" PackagePath="" />
         <None Include="..\..\LICENSE" Pack="true" PackagePath="" />
     </ItemGroup>
 

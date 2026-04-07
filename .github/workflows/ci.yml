@@ -2,13 +2,8 @@ name: CI
 
 on: [push, pull_request]
 
-env:
-  VERSION: "5.1.0.${{github.run_number}}"
-  PACKAGE_SUFFIX: ""
-
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
@@ -22,29 +17,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Load strong name certificate
-        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-        run: |
-          echo "$SNC_BASE64" | base64 --decode > "${{ github.workspace }}/certificate.snk"
-        shell: bash
-        env:
-          SNC_BASE64: ${{ secrets.SNC_BASE64 }}
-
-      - name: Build package (signed)
-        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-        run: dotnet build MQTTnet.sln --configuration Release /p:FileVersion=${{ env.VERSION }} /p:AssemblyVersion=${{ env.VERSION }} /p:PackageVersion=${{ env.VERSION }}${{ env.PACKAGE_SUFFIX }} /p:SignAssembly=true /p:AssemblyOriginatorKeyFile=${{ github.workspace }}/certificate.snk
-
-      - name: Build package (unsigned)
-        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
-        run: dotnet build MQTTnet.sln --configuration Release /p:FileVersion=${{ env.VERSION }} /p:AssemblyVersion=${{ env.VERSION }} /p:PackageVersion=${{ env.VERSION }}${{ env.PACKAGE_SUFFIX }}
-
-      - name: Upload nuget packages
-        uses: actions/upload-artifact@v4
-        with:
-          name: nugets
-          path: |
-            ${{ github.workspace }}/Source/**/*.nupkg
-            ${{ github.workspace }}/Source/**/*.snupkg
+      - name: Build
+        run: dotnet build MQTTnet.sln --configuration Release
 
   test:
     runs-on: ubuntu-latest
@@ -62,71 +36,3 @@ jobs:
 
       - name: Execute tests
         run: dotnet test --framework net10.0 --configuration Release --project Source/MQTTnet.Tests/MQTTnet.Tests.csproj
-
-  sign:
-    needs: build
-    runs-on: windows-latest # Code signing must run on a Windows agent for Authenticode signing (dll/exe)
-    if: github.repository == 'dotnet/MQTTnet' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    steps:
-      - name: Download nuget packages
-        uses: actions/download-artifact@v4
-        with:
-          name: nugets
-          path: nugets
-
-      - name: Install sign CLI tool
-        run: dotnet tool install --tool-path . sign --version 0.9.1-beta.25379.1
-
-      - name: Sign nugets
-        shell: pwsh
-        run: >
-          ./sign code azure-key-vault `
-          "**/*.nupkg" `
-          --base-directory "${{ github.workspace }}\nugets" `
-          --publisher-name "MQTTnet" `
-          --description "MQTTnet" `
-          --description-url "https://github.com/dotnet/MQTTnet" `
-          --azure-key-vault-tenant-id "${{ secrets.AZURE_TENANT_ID }}" `
-          --azure-key-vault-client-id "${{ secrets.AZURE_CLIENT_ID }}" `
-          --azure-key-vault-client-secret "${{ secrets.AZURE_CLIENT_SECRET }}" `
-          --azure-key-vault-certificate "${{ secrets.KEY_VAULT_CERTIFICATE_ID }}" `
-          --azure-key-vault-url "${{ secrets.KEY_VAULT_URL }}"
-
-      - name: Upload signed nuget packages
-        uses: actions/upload-artifact@v4
-        with:
-          name: signed-nugets
-          path: |
-            ${{ github.workspace }}\nugets\**\*.nupkg
-            ${{ github.workspace }}\nugets\**\*.snupkg
-
-  publish-myget:
-    if: ${{ github.event_name == 'push' }}
-    needs: sign
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Download signed nuget packages
-        uses: actions/download-artifact@v4
-        with:
-          name: signed-nugets
-          path: nugets
-
-      - name: Publish myget.com nugets
-        run: dotnet nuget push ${{ github.workspace }}/nugets/**/*.nupkg -k ${{ secrets.MYGET_API_KEY }} -s https://www.myget.org/F/mqttnet/api/v3/index.json --skip-duplicate
-
-  publish-nuget:
-    # Tag schema is 'v5.0.0-rc' etc.
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [sign, test]
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Download signed nuget packages
-        uses: actions/download-artifact@v4
-        with:
-          name: signed-nugets
-          path: nugets
-
-      - name: Publish nuget.org nugets
-        run: dotnet nuget push ${{ github.workspace }}/nugets/**/*.nupkg -k ${{ secrets.NUGET_API_KEY }} -s https://api.nuget.org/v3/index.json --skip-duplicate

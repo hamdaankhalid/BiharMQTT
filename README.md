@@ -1,8 +1,3 @@
-<p align="center">
-<img src="https://github.com/dotnet/MQTTnet/blob/master/Images/icon_det_256.png?raw=true" width="196">
-<br/>
-</p>
-
 # BiharMQTT
 
 **BiharMQTT is a fork of [MQTTnet](https://github.com/dotnet/MQTTnet)** — a high-performance .NET MQTT library — with modifications focused on eliminating heap allocations on the server publish hot path.
