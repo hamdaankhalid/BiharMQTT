@@ -39,10 +39,7 @@ public class MqttServer : Disposable
         _rootLogger = logger ?? throw new ArgumentNullException(nameof(logger));
         _logger = logger.WithSource(nameof(MqttServer));
 
-        if (options.UseRingBuffer)
-        {
-            _ringBuffer = new MessageRingBuffer(options.RingBufferCapacityBytes, options.RingBufferMaxSlots);
-        }
+        _ringBuffer = new MessageRingBuffer(options.RingBufferCapacityBytes, options.RingBufferMaxSlots);
 
         _retainedMessagesManager = new MqttRetainedMessagesManager(_eventContainer, _rootLogger);
         _clientSessionsManager = new MqttClientSessionsManager(options, _retainedMessagesManager, _eventContainer, _rootLogger, _ringBuffer);
@@ -207,20 +204,10 @@ public class MqttServer : Disposable
     public bool IsStarted => _cancellationTokenSource != null;
 
     /// <summary>
-    ///     Gets whether the ring buffer message store is enabled.
-    /// </summary>
-    public bool IsRingBufferEnabled => _ringBuffer != null;
-
-    /// <summary>
-    ///     Gets ring buffer diagnostic counters. Returns <c>null</c> if the ring buffer is not enabled.
+    ///     Gets ring buffer diagnostic counters.
     /// </summary>
     public MessageRingBufferDiagnostics GetRingBufferDiagnostics()
     {
-        if (_ringBuffer == null)
-        {
-            return null;
-        }
-
         return new MessageRingBufferDiagnostics
         {
             CapacityBytes = _ringBuffer.Capacity,

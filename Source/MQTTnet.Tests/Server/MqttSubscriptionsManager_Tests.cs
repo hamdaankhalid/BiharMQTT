@@ -187,7 +187,7 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
         var options = new MqttServerOptions();
         var retainedMessagesManager = new MqttRetainedMessagesManager(new MqttServerEventContainer(), logger);
         var eventContainer = new MqttServerEventContainer();
-        var clientSessionManager = new MqttClientSessionsManager(options, retainedMessagesManager, eventContainer, logger);
+        var clientSessionManager = new MqttClientSessionsManager(options, retainedMessagesManager, eventContainer, logger, new MessageRingBuffer(1024 * 1024, 256));
 
         var session = new MqttSession(
             new MqttConnectPacket

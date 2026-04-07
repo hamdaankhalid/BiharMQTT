@@ -588,11 +588,10 @@ Client B receives "sensor/temp"
 
 ---
 
-## 16  Ring Buffer Message Store (Optional)
+## 16  Ring Buffer Message Store
 
-When `MqttServerOptions.UseRingBuffer = true`, the server pre-allocates a
-fixed `byte[]` (default 256 MB) at startup.  Message payloads flow through
-a zero-allocation path:
+The server pre-allocates a fixed `byte[]` (default 256 MB) at startup.
+Message payloads flow through a zero-allocation path:
 
 ```
 Producer (wire PUBLISH or InjectApplicationMessage)
@@ -627,7 +626,6 @@ Send loop (per subscriber):
 
 | Option | Default | Description |
 |---|---|---|
-| `UseRingBuffer` | `false` | Enable the ring buffer message store |
 | `RingBufferCapacityBytes` | 256 MB | Total ring buffer size |
 | `RingBufferMaxSlots` | 65536 | Max concurrent in-flight messages |
 

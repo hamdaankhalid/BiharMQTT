@@ -234,7 +234,6 @@ public class MqttServerOptionsBuilder
 
     public MqttServerOptionsBuilder WithRingBuffer(int capacityBytes = 256 * 1024 * 1024, int maxSlots = 65536)
     {
-        _options.UseRingBuffer = true;
         _options.RingBufferCapacityBytes = capacityBytes;
         _options.RingBufferMaxSlots = maxSlots;
         return this;

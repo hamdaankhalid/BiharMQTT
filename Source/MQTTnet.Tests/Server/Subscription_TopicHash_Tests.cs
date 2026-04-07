@@ -548,7 +548,7 @@ public sealed class SubscriptionTopicHashTests : IDisposable
         var serverOptions = new MqttServerOptions();
         var eventContainer = new MqttServerEventContainer();
         var retainedMessagesManager = new MqttRetainedMessagesManager(eventContainer, logger);
-        var sessionManager = new MqttClientSessionsManager(serverOptions, retainedMessagesManager, eventContainer, logger);
+        var sessionManager = new MqttClientSessionsManager(serverOptions, retainedMessagesManager, eventContainer, logger, new MessageRingBuffer(1024 * 1024, 256));
         _clientSession = new MqttSession(
             new MqttConnectPacket { ClientId = clientId },
             new Dictionary<object, object>(),

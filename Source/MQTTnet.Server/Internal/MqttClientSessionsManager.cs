@@ -39,7 +39,7 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
         MqttRetainedMessagesManager retainedMessagesManager,
         MqttServerEventContainer eventContainer,
         IMqttNetLogger logger,
-        MessageRingBuffer ringBuffer = null)
+        MessageRingBuffer ringBuffer)
     {
         ArgumentNullException.ThrowIfNull(logger);
 
@@ -49,7 +49,7 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _retainedMessagesManager = retainedMessagesManager ?? throw new ArgumentNullException(nameof(retainedMessagesManager));
         _eventContainer = eventContainer ?? throw new ArgumentNullException(nameof(eventContainer));
-        _ringBuffer = ringBuffer;
+        _ringBuffer = ringBuffer ?? throw new ArgumentNullException(nameof(ringBuffer));
     }
 
     public async Task CloseAllConnections(MqttServerClientDisconnectOptions options)
@@ -128,7 +128,6 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
     ///     inbound PUBLISH packets (no class-based event handlers registered).
     /// </summary>
     public bool IsRingBufferFastPathAvailable =>
-        _ringBuffer != null &&
         !_eventContainer.InterceptingPublishEvent.HasHandlers &&
         !_eventContainer.InterceptingClientEnqueueEvent.HasHandlers &&
         !_eventContainer.ApplicationMessageEnqueuedOrDroppedEvent.HasHandlers &&
@@ -155,6 +154,7 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
             publishPacket.CorrelationData,
             publishPacket.MessageExpiryInterval,
             publishPacket.PayloadFormatIndicator,
+            publishPacket.TopicAlias,
             publishPacket.SubscriptionIdentifiers,
             publishPacket.UserProperties,
             cancellationToken);
@@ -168,11 +168,10 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
         CancellationToken cancellationToken)
     {
         // ── Ring buffer fast path ──
-        // When the ring buffer is active and no event handlers need a class-based
-        // MqttApplicationMessage, and the message is not retained, route through
-        // the ring buffer to avoid heap allocations.
-        if (_ringBuffer != null &&
-            !applicationMessage.Retain &&
+        // When no event handlers need a class-based MqttApplicationMessage, and
+        // the message is not retained, route through the ring buffer to avoid
+        // heap allocations.
+        if (!applicationMessage.Retain &&
             !_eventContainer.InterceptingPublishEvent.HasHandlers &&
             !_eventContainer.InterceptingClientEnqueueEvent.HasHandlers &&
             !_eventContainer.ApplicationMessageEnqueuedOrDroppedEvent.HasHandlers &&
@@ -189,6 +188,7 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
                 applicationMessage.CorrelationData,
                 applicationMessage.MessageExpiryInterval,
                 applicationMessage.PayloadFormatIndicator,
+                applicationMessage.TopicAlias,
                 applicationMessage.SubscriptionIdentifiers,
                 applicationMessage.UserProperties,
                 cancellationToken).ConfigureAwait(false);
@@ -353,139 +353,23 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
         }
 
         // ── Ring buffer path ──
-        if (_ringBuffer != null)
-        {
-            return await DispatchViaRingBuffer(
-                senderId,
-                message.Topic,
-                message.Payload.Length > 0
-                    ? new ReadOnlySequence<byte>(message.Payload)
-                    : ReadOnlySequence<byte>.Empty,
-                message.QualityOfServiceLevel,
-                message.Retain,
-                message.ContentType,
-                message.ResponseTopic,
-                message.CorrelationData,
-                message.MessageExpiryInterval,
-                message.PayloadFormatIndicator,
-                message.SubscriptionIdentifiers,
-                message.UserProperties,
-                cancellationToken).ConfigureAwait(false);
-        }
-
-        // ── ArrayPool path (no ring buffer) ──
-
-        // Rent a byte[] from ArrayPool (zero alloc after warmup) and memcopy the
-        // caller's payload into it. The SharedPooledPayloadBuffer is itself pooled.
-        // A sentinel ref count of 1 prevents premature release while we iterate
-        // subscribers; each enqueued packet adds +1 via AddRef, and the sentinel
-        // is dropped after the loop.
-        SharedPooledPayloadBuffer sharedBuffer = null;
-        var payloadSnapshot = ReadOnlySequence<byte>.Empty;
-
-        if (message.Payload.Length > 0)
-        {
-            sharedBuffer = SharedPooledPayloadBuffer.RentAndCopy(message.Payload.Span);
-            payloadSnapshot = sharedBuffer.Payload;
-        }
-
-        var matchingSubscribersCount = 0;
-
-        try
-        {
-            List<MqttSession> subscriberSessions;
-            _sessionsManagementLock.EnterReadLock();
-            try
-            {
-                subscriberSessions = _subscriberSessions.ToList();
-            }
-            finally
-            {
-                _sessionsManagementLock.ExitReadLock();
-            }
-
-            MqttTopicHash.Calculate(message.Topic, out var topicHash, out _, out _);
-
-            foreach (var session in subscriberSessions)
-            {
-                if (!session.TryCheckSubscriptions(
-                        message.Topic,
-                        topicHash,
-                        message.QualityOfServiceLevel,
-                        senderId,
-                        out var checkSubscriptionsResult))
-                {
-                    continue;
-                }
-
-                if (!checkSubscriptionsResult.IsSubscribed)
-                {
-                    continue;
-                }
-
-                var publishPacketCopy = MqttPublishPacketFactory.Create(message, payloadSnapshot);
-                publishPacketCopy.QualityOfServiceLevel = checkSubscriptionsResult.QualityOfServiceLevel;
-                publishPacketCopy.SubscriptionIdentifiers = checkSubscriptionsResult.SubscriptionIdentifiers;
-
-                if (publishPacketCopy.QualityOfServiceLevel > 0)
-                {
-                    publishPacketCopy.PacketIdentifier = session.PacketIdentifierProvider.GetNextPacketIdentifier();
-                }
-
-                if (checkSubscriptionsResult.RetainAsPublished)
-                {
-                    publishPacketCopy.Retain = message.Retain;
-                }
-                else
-                {
-                    publishPacketCopy.Retain = false;
-                }
-
-                matchingSubscribersCount++;
-
-                var busItem = new MqttPacketBusItem(publishPacketCopy);
-
-                if (sharedBuffer != null)
-                {
-                    sharedBuffer.AddRef();
-                    busItem.OnTerminated = SharedPooledPayloadBuffer.ReleaseCallback;
-                    busItem.TerminationState = sharedBuffer;
-                }
-
-                session.EnqueueDataPacket(busItem);
-
-                _logger.Verbose("Client '{0}': Queued PUBLISH packet with topic '{1}'", session.Id, message.Topic);
-            }
-
-            if (matchingSubscribersCount == 0)
-            {
-                return new DispatchApplicationMessageResult(
-                    (int)MqttPubAckReasonCode.NoMatchingSubscribers,
-                    closeConnection: false,
-                    reasonString: null,
-                    userProperties: null);
-            }
-        }
-        catch (Exception exception)
-        {
-            _logger.Error(exception, "Error while processing next queued application message");
-        }
-        finally
-        {
-            // Drop the sentinel reference. If no subscribers matched, this returns
-            // the rented buffer immediately. Otherwise it stays alive until the last
-            // MqttPacketBusItem reaches a terminal state.
-            if (sharedBuffer != null)
-            {
-                SharedPooledPayloadBuffer.Release(sharedBuffer);
-            }
-        }
-
-        return new DispatchApplicationMessageResult(
-            (int)MqttPubAckReasonCode.Success,
-            closeConnection: false,
-            reasonString: null,
-            userProperties: null);
+        return await DispatchViaRingBuffer(
+            senderId,
+            message.Topic,
+            message.Payload.Length > 0
+                ? new ReadOnlySequence<byte>(message.Payload)
+                : ReadOnlySequence<byte>.Empty,
+            message.QualityOfServiceLevel,
+            message.Retain,
+            message.ContentType,
+            message.ResponseTopic,
+            message.CorrelationData,
+            message.MessageExpiryInterval,
+            message.PayloadFormatIndicator,
+            0,
+            message.SubscriptionIdentifiers,
+            message.UserProperties,
+            cancellationToken).ConfigureAwait(false);
     }
 
     public void Dispose()
@@ -590,14 +474,11 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
     {
         MqttConnectedClient connectedClient = null;
 
-        // Enable zero-copy payload decode when the ring buffer is active.
-        // The payload slice references the per-connection reusable body buffer;
-        // DispatchViaRingBuffer copies it into the ring buffer before the next
-        // ReceiveAsync overwrites the body buffer.
-        if (_ringBuffer != null)
-        {
-            channelAdapter.PacketFormatterAdapter.UseZeroCopyPayloadDecode = true;
-        }
+        // Enable zero-copy payload decode. The payload slice references the
+        // per-connection reusable body buffer; DispatchViaRingBuffer copies it
+        // into the ring buffer before the next ReceiveAsync overwrites the
+        // body buffer.
+        channelAdapter.PacketFormatterAdapter.UseZeroCopyPayloadDecode = true;
 
         try
         {
@@ -917,6 +798,7 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
         byte[] correlationData,
         uint messageExpiryInterval,
         MqttPayloadFormatIndicator payloadFormatIndicator,
+        ushort topicAlias,
         List<uint> subscriptionIdentifiers,
         List<MqttUserProperty> userProperties,
         CancellationToken cancellationToken)
@@ -1011,6 +893,7 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
                     CorrelationData = correlationData,
                     MessageExpiryInterval = messageExpiryInterval,
                     PayloadFormatIndicator = payloadFormatIndicator,
+                    TopicAlias = topicAlias,
                     UserProperties = userProperties
                 };
 
