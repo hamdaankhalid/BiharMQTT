@@ -6,10 +6,10 @@
         <IsAotCompatible>true</IsAotCompatible>
 
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-        <Description>MQTTnet is a high performance .NET library for MQTT based communication. It provides a MQTT client and a MQTT server (broker) and supports v3.1.0, v3.1.1 and v5.0.0 of the MQTT protocol.</Description>
-        <PackageId>MQTTnet.AspNetCore</PackageId>
+        <Description>BiharMQTT is a high performance .NET library for MQTT based communication. It provides a MQTT client and a MQTT server (broker) and supports v3.1.0, v3.1.1 and v5.0.0 of the MQTT protocol.</Description>
+        <PackageId>BiharMQTT.AspNetCore</PackageId>
         <PackageTags>MQTT Message Queue Telemetry Transport MQTTClient MQTTServer Server MQTTBroker Broker NETStandard IoT InternetOfThings Messaging Hardware Arduino Sensor Actuator M2M ESP Smart Home Cities Automation Xamarin Blazor</PackageTags>
-        <PackageReleaseNotes>For release notes please go to MQTTnet release notes (https://www.nuget.org/packages/MQTTnet/).</PackageReleaseNotes>
+        <PackageReleaseNotes>For release notes please go to BiharMQTT release notes (https://www.nuget.org/packages/BiharMQTT/).</PackageReleaseNotes>
 
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
     </PropertyGroup>

@@ -6,11 +6,11 @@
         <IsAotCompatible>true</IsAotCompatible>
 
         <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-        <Description>This is an extension library which allows executing synchronous device calls including a response using MQTTnet.</Description>
-        <PackageId>MQTTnet.Extensions.Rpc</PackageId>
+        <Description>This is an extension library which allows executing synchronous device calls including a response using BiharMQTT.</Description>
+        <PackageId>BiharMQTT.Extensions.Rpc</PackageId>
         <PackageTags>MQTT Message Queue Telemetry Transport MQTTClient MQTTServer Server MQTTBroker Broker NETStandard IoT InternetOfThings Messaging Hardware Arduino Sensor Actuator M2M ESP Smart Home Cities Automation Xamarin Blazor</PackageTags>
         <EmbedUntrackedSources>true</EmbedUntrackedSources>
-        <PackageReleaseNotes>For release notes please go to MQTTnet release notes (https://www.nuget.org/packages/MQTTnet/).</PackageReleaseNotes>
+        <PackageReleaseNotes>For release notes please go to BiharMQTT release notes (https://www.nuget.org/packages/BiharMQTT/).</PackageReleaseNotes>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
     </PropertyGroup>
 

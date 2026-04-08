@@ -11,9 +11,9 @@
            routing and similar functionality based on the well known moustache syntax (AsyncAPI compatible).
         </Description>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
-        <PackageId>MQTTnet.Extensions.TopicTemplate</PackageId>
+        <PackageId>BiharMQTT.Extensions.TopicTemplate</PackageId>
         <PackageTags>MQTT Message Queue Telemetry MQTTClient Messaging Routing AsyncAPI Template</PackageTags>
-        <PackageReleaseNotes>For release notes please go to MQTTnet release notes (https://www.nuget.org/packages/MQTTnet/).</PackageReleaseNotes>
+        <PackageReleaseNotes>For release notes please go to BiharMQTT release notes (https://www.nuget.org/packages/BiharMQTT/).</PackageReleaseNotes>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
 
     </PropertyGroup>

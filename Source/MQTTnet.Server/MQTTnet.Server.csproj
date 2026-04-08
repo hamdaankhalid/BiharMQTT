@@ -7,8 +7,8 @@
 
         <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
-        <Description>This is the server implementation of MQTTnet.</Description>
-        <PackageId>MQTTnet.Server</PackageId>
+        <Description>This is the server implementation of BiharMQTT.</Description>
+        <PackageId>BiharMQTT.Server</PackageId>
         <PackageTags>MQTT Message Queue Telemetry Transport MQTTClient MQTTServer Server MQTTBroker Broker NETStandard IoT InternetOfThings Messaging Hardware Arduino Sensor Actuator M2M ESP Smart Home Cities Automation Xamarin Blazor</PackageTags>
     </PropertyGroup>
 
