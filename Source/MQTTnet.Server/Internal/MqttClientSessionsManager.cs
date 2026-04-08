@@ -822,24 +822,24 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
         List<MqttUserProperty> interceptorUserProperties = null;
         var reasonCode = 0;
 
-        // Invoke the buffered interceptor if registered. The payload
-        // ReadOnlyMemory<byte> points directly into ring buffer memory.
+        // Invoke the buffered interceptor if registered. The struct is
+        // stack-allocated and passed by ref — zero heap allocations.
         if (_eventContainer.InterceptingPublishBufferedEvent.HasHandlers)
         {
             var payloadView = slot.IsValid ? _ringBuffer.GetPayload(slot) : ReadOnlyMemory<byte>.Empty;
             var bufferedEventArgs = new InterceptingPublishBufferedEventArgs(
-                topic, payloadView, qos, retain, senderId, string.Empty, new System.Collections.Concurrent.ConcurrentDictionary<object, object>(), cancellationToken);
+                topic, payloadView, qos, retain, senderId, cancellationToken);
 
-            await _eventContainer.InterceptingPublishBufferedEvent.InvokeAsync(bufferedEventArgs).ConfigureAwait(false);
+            _eventContainer.InterceptingPublishBufferedEvent.Invoke(ref bufferedEventArgs);
 
             topic = bufferedEventArgs.Topic;
             qos = bufferedEventArgs.QualityOfServiceLevel;
             retain = bufferedEventArgs.Retain;
             closeConnection = bufferedEventArgs.CloseConnection;
             processPublish = bufferedEventArgs.ProcessPublish;
-            reasonString = bufferedEventArgs.Response.ReasonString;
-            interceptorUserProperties = bufferedEventArgs.Response.UserProperties;
-            reasonCode = (int)bufferedEventArgs.Response.ReasonCode;
+            reasonString = bufferedEventArgs.ReasonString;
+            interceptorUserProperties = bufferedEventArgs.UserProperties;
+            reasonCode = (int)bufferedEventArgs.ReasonCode;
         }
 
         if (!processPublish)

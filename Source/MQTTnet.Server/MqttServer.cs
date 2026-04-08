@@ -113,16 +113,15 @@ public class MqttServer : Disposable
     }
 
     /// <summary>
-    ///     Fired when the ring buffer dispatch path is active.  The event args expose
-    ///     the payload as <see cref="ReadOnlyMemory{T}" /> pointing directly into ring
-    ///     buffer memory.
+    ///     Fired when the ring buffer dispatch path is active.  The event args are passed
+    ///     by <c>ref</c> as a stack-allocated struct — zero heap allocations per message.
     ///     <para>
     ///         <b>IMPORTANT</b>: The payload memory is only valid during the callback.
     ///         Do NOT store the <c>ReadOnlyMemory&lt;byte&gt;</c> reference beyond the
     ///         callback return.  Call <c>.ToArray()</c> if you need a persistent copy.
     ///     </para>
     /// </summary>
-    public event Func<InterceptingPublishBufferedEventArgs, Task> InterceptingPublishBufferedAsync
+    public event BufferedPublishHandler InterceptingPublishBufferedAsync
     {
         add => _eventContainer.InterceptingPublishBufferedEvent.AddHandler(value);
         remove => _eventContainer.InterceptingPublishBufferedEvent.RemoveHandler(value);

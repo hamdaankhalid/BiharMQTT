@@ -209,11 +209,10 @@ public sealed class RingBuffer_Integration_Tests : BaseTestClass
         string interceptedTopic = null;
         byte[] interceptedPayloadCopy = null;
 
-        server.InterceptingPublishBufferedAsync += args =>
+        server.InterceptingPublishBufferedAsync += (ref InterceptingPublishBufferedEventArgs args) =>
         {
             interceptedTopic = args.Topic;
             interceptedPayloadCopy = args.Payload.ToArray();
-            return Task.CompletedTask;
         };
 
         var receiver = await testEnvironment.ConnectClient();
@@ -242,10 +241,9 @@ public sealed class RingBuffer_Integration_Tests : BaseTestClass
         var server = await testEnvironment.StartServer(
             builder => builder.WithRingBuffer(capacityBytes: 1024 * 1024, maxSlots: 256));
 
-        server.InterceptingPublishBufferedAsync += args =>
+        server.InterceptingPublishBufferedAsync += (ref InterceptingPublishBufferedEventArgs args) =>
         {
             args.ProcessPublish = false;
-            return Task.CompletedTask;
         };
 
         var receiver = await testEnvironment.ConnectClient();
