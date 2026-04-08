@@ -16,35 +16,38 @@ public static class Program
         _benchmarks = CollectBenchmarks();
         HandleArguments(arguments);
 
-        while (true)
+        if (arguments.Length == 0)
         {
-            RenderMenu();
+            while (true)
+            {
+                RenderMenu();
 
-            var key = Console.ReadKey(true);
+                var key = Console.ReadKey(true);
 
-            if (key.Key == ConsoleKey.DownArrow)
-            {
-                _selectedBenchmarkIndex++;
-                if (_selectedBenchmarkIndex > _benchmarks.Count - 1)
+                if (key.Key == ConsoleKey.DownArrow)
                 {
-                    _selectedBenchmarkIndex = 0;
+                    _selectedBenchmarkIndex++;
+                    if (_selectedBenchmarkIndex > _benchmarks.Count - 1)
+                    {
+                        _selectedBenchmarkIndex = 0;
+                    }
                 }
-            }
-            else if (key.Key == ConsoleKey.UpArrow)
-            {
-                _selectedBenchmarkIndex--;
-                if (_selectedBenchmarkIndex < 0)
+                else if (key.Key == ConsoleKey.UpArrow)
                 {
-                    _selectedBenchmarkIndex = _benchmarks.Count - 1;
+                    _selectedBenchmarkIndex--;
+                    if (_selectedBenchmarkIndex < 0)
+                    {
+                        _selectedBenchmarkIndex = _benchmarks.Count - 1;
+                    }
                 }
-            }
-            else if (key.Key == ConsoleKey.Escape)
-            {
-                Environment.Exit(0);
-            }
-            else if (key.Key == ConsoleKey.Enter)
-            {
-                break;
+                else if (key.Key == ConsoleKey.Escape)
+                {
+                    Environment.Exit(0);
+                }
+                else if (key.Key == ConsoleKey.Enter)
+                {
+                    break;
+                }
             }
         }
 

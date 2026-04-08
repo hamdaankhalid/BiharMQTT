@@ -16,7 +16,7 @@ using System.Net;
 
 namespace BiharMQTT.Benchmarks;
 
-[SimpleJob(RuntimeMoniker.Net60)]
+[SimpleJob(RuntimeMoniker.Net10_0)]
 [RPlotExporter]
 [MemoryDiagnoser]
 public class SerializerBenchmark : BaseBenchmark

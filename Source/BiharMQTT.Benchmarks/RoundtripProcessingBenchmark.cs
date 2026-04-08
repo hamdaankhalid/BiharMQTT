@@ -4,7 +4,7 @@ using BiharMQTT.Tests.Mockups;
 
 namespace BiharMQTT.Benchmarks;
 
-[SimpleJob(RuntimeMoniker.Net60)]
+[SimpleJob(RuntimeMoniker.Net10_0)]
 [RPlotExporter, RankColumn]
 [MemoryDiagnoser]
 public class RoundtripProcessingBenchmark : BaseBenchmark

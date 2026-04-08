@@ -6,7 +6,7 @@ using BiharMQTT.Formatter;
 
 namespace BiharMQTT.Benchmarks;
 
-[SimpleJob(RuntimeMoniker.Net60)]
+[SimpleJob(RuntimeMoniker.Net10_0)]
 [RPlotExporter]
 [RankColumn]
 [MemoryDiagnoser]

@@ -9,7 +9,7 @@ using BiharMQTT.Tests.Mockups;
 
 namespace BiharMQTT.Benchmarks;
 
-[SimpleJob(RuntimeMoniker.Net60)]
+[SimpleJob(RuntimeMoniker.Net10_0)]
 [MemoryDiagnoser]
 public class MqttPacketReaderWriterBenchmark : BaseBenchmark
 {

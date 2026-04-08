@@ -14,7 +14,7 @@ using BiharMQTT.Server.Internal.Adapter;
 
 namespace BiharMQTT.Benchmarks;
 
-[SimpleJob(RuntimeMoniker.Net60)]
+[SimpleJob(RuntimeMoniker.Net10_0)]
 [MemoryDiagnoser]
 public sealed class MqttTcpChannelBenchmark : BaseBenchmark, IDisposable
 {
