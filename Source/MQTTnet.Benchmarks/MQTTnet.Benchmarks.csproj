@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <DebugType>Full</DebugType>
+        <IsPackable>false</IsPackable>
+        <NoWarn>$(NoWarn);CS8892;CA1707;CA1051;CA1822</NoWarn>
+        <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="BenchmarkDotNet" Version="0.15.4" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="../MQTTnet/BiharMQTT.csproj" />
+        <ProjectReference Include="..\..\Source\MQTTnet.Server\MQTTnet.Server.csproj" />
+        <ProjectReference Include="..\..\Source\MQTTnet.AspnetCore\MQTTnet.AspNetCore.csproj" />
+        <ProjectReference Include="..\MQTTnet.Tests\MQTTnet.Tests.csproj" />
+    </ItemGroup>
+
+</Project>

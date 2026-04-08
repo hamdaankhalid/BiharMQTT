@@ -1,11 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <AssemblyName>BiharMQTT.Server</AssemblyName>
-        <RootNamespace>BiharMQTT.Server</RootNamespace>
+        <AssemblyName>MQTTnet.Server</AssemblyName>
+        <RootNamespace>MQTTnet.Server</RootNamespace>
         <IsAotCompatible>true</IsAotCompatible>
 
-        <IsPackable>true</IsPackable>
+        <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <Description>This is the server implementation of BiharMQTT.</Description>
         <PackageId>BiharMQTT.Server</PackageId>
@@ -13,7 +13,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="../BiharMQTT/BiharMQTT.csproj" />
+        <ProjectReference Include="../MQTTnet/BiharMQTT.csproj" />
     </ItemGroup>
 
 </Project>

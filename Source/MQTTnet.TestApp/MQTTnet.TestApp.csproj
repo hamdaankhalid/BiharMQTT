@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="../MQTTnet/BiharMQTT.csproj" />
+        <ProjectReference Include="..\MQTTnet.Extensions.TopicTemplate\MQTTnet.Extensions.TopicTemplate.csproj" />
+        <ProjectReference Include="..\MQTTnet.Server\MQTTnet.Server.csproj" />
+    </ItemGroup>
+
+</Project>

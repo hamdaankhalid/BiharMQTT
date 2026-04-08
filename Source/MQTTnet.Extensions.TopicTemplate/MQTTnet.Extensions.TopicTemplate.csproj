@@ -1,11 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <AssemblyName>BiharMQTT.Extensions.TopicTemplate</AssemblyName>
-        <RootNamespace>BiharMQTT.Extensions.TopicTemplate</RootNamespace>
+        <AssemblyName>MQTTnet.Extensions.TopicTemplate</AssemblyName>
+        <RootNamespace>MQTTnet.Extensions.TopicTemplate</RootNamespace>
         <IsAotCompatible>true</IsAotCompatible>
 
-        <IsPackable>true</IsPackable>
+        <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
         <Description>
            Provides mqtt topic templating logic to support dispatch,
            routing and similar functionality based on the well known moustache syntax (AsyncAPI compatible).
@@ -23,7 +23,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="../BiharMQTT/BiharMQTT.csproj" />
+        <ProjectReference Include="../MQTTnet/BiharMQTT.csproj" />
     </ItemGroup>
 
 </Project>

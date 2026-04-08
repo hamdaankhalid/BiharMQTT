@@ -1,11 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <AssemblyName>BiharMQTT.Extensions.Rpc</AssemblyName>
-        <RootNamespace>BiharMQTT.Extensions.Rpc</RootNamespace>
+        <AssemblyName>MQTTnet.Extensions.Rpc</AssemblyName>
+        <RootNamespace>MQTTnet.Extensions.Rpc</RootNamespace>
         <IsAotCompatible>true</IsAotCompatible>
 
-        <IsPackable>true</IsPackable>
+        <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
         <Description>This is an extension library which allows executing synchronous device calls including a response using BiharMQTT.</Description>
         <PackageId>BiharMQTT.Extensions.Rpc</PackageId>
         <PackageTags>MQTT Message Queue Telemetry Transport MQTTClient MQTTServer Server MQTTBroker Broker NETStandard IoT InternetOfThings Messaging Hardware Arduino Sensor Actuator M2M ESP Smart Home Cities Automation Xamarin Blazor</PackageTags>
@@ -15,7 +15,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="../BiharMQTT/BiharMQTT.csproj" />
+        <ProjectReference Include="../MQTTnet/BiharMQTT.csproj" />
     </ItemGroup>
 
 </Project>
