@@ -296,3 +296,7 @@ __pycache__/
 Build/NuGet/
 
 Build/nuget.exe
+
+# Old MQTTnet csproj files (recreated by dotnet restore cache)
+Source/MQTTnet*/
+Samples/MQTTnet*
