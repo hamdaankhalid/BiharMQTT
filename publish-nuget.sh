@@ -40,17 +40,18 @@ mkdir -p "$OUTPUT_DIR"
 dotnet clean BiharMQTT.sln --configuration "$CONFIGURATION" --verbosity quiet 2>/dev/null || true
 find Source Samples -type f \( -name "*.nupkg" -o -name "*.snupkg" \) -delete 2>/dev/null || true
 
-# Build + Pack
-echo "→ Building and packing (v$VERSION)..."
+# Build
+echo "→ Building (v$VERSION)..."
 dotnet build BiharMQTT.sln \
-    --configuration "$CONFIGURATION" \
-    /p:GeneratePackageOnBuild=true \
-    /p:Version="$VERSION"
+    --configuration "$CONFIGURATION"
 
-# Collect .nupkg files
-echo "→ Collecting packages..."
-find Source -name "*.nupkg" -exec cp {} "$OUTPUT_DIR/" \;
-find Source -name "*.snupkg" -exec cp {} "$OUTPUT_DIR/" \;
+# Pack
+echo "→ Packing (v$VERSION)..."
+dotnet pack BiharMQTT.sln \
+    --configuration "$CONFIGURATION" \
+    --no-build \
+    --output "$OUTPUT_DIR" \
+    /p:Version="$VERSION"
 
 PACKAGES=("$OUTPUT_DIR"/*.nupkg)
 if [ ${#PACKAGES[@]} -eq 0 ]; then

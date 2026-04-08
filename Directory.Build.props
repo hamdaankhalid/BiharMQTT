@@ -31,7 +31,7 @@
         <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
     </PropertyGroup>
 
-    <PropertyGroup Condition="'$(GeneratePackageOnBuild)'=='true'">
+    <PropertyGroup Condition="'$(IsPackable)'!='false'">
         <PackageLicenseFile>LICENSE</PackageLicenseFile>
         <PackageProjectUrl>https://github.com/hamdaankhalid/BiharMQTT</PackageProjectUrl>
         <RepositoryUrl>https://github.com/hamdaankhalid/BiharMQTT.git</RepositoryUrl>
@@ -42,7 +42,7 @@
         <EmbedUntrackedSources>true</EmbedUntrackedSources>
     </PropertyGroup>
 
-    <ItemGroup Condition="'$(GeneratePackageOnBuild)'=='true'">
+    <ItemGroup Condition="'$(IsPackable)'!='false'">
         <None Include="README.md" Pack="true" PackagePath="" Condition="Exists('README.md')" />
         <None Include="..\..\LICENSE" Pack="true" PackagePath="" />
     </ItemGroup>
