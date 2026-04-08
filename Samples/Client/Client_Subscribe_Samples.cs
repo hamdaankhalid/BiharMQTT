@@ -8,11 +8,11 @@
 // ReSharper disable UnusedMember.Local
 
 using System.Text;
-using MQTTnet.Packets;
-using MQTTnet.Protocol;
-using MQTTnet.Samples.Helpers;
+using BiharMQTT.Packets;
+using BiharMQTT.Protocol;
+using BiharMQTT.Samples.Helpers;
 
-namespace MQTTnet.Samples.Client;
+namespace BiharMQTT.Samples.Client;
 
 public static class Client_Subscribe_Samples
 {

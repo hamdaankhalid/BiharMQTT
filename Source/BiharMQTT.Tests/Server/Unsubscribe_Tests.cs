@@ -1,0 +1,54 @@
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+using System.Text;
+using BiharMQTT.Exceptions;
+using BiharMQTT.Formatter;
+using BiharMQTT.Internal;
+using BiharMQTT.Server;
+
+namespace BiharMQTT.Tests.Server;
+
+// ReSharper disable InconsistentNaming
+[TestClass]
+public sealed class Unsubscribe_Tests : BaseTestClass
+{
+    [TestMethod]
+    public Task Disconnect_While_Unsubscribing()
+    {
+        return Assert.ThrowsExactlyAsync<MqttClientDisconnectedException>(async () =>
+        {
+            using var testEnvironment = CreateTestEnvironment();
+            var server = await testEnvironment.StartServer();
+
+            // The client will be disconnected directly after subscribing!
+            server.ClientUnsubscribedTopicAsync += ev => server.DisconnectClientAsync(ev.ClientId);
+
+            var client = await testEnvironment.ConnectClient();
+            await client.SubscribeAsync("#");
+            await client.UnsubscribeAsync("#");
+        });
+    }
+
+    [TestMethod]
+    public async Task Intercept_Unsubscribe_With_User_Properties()
+    {
+        using var testEnvironment = CreateTestEnvironment(MqttProtocolVersion.V500);
+        var server = await testEnvironment.StartServer();
+
+        InterceptingUnsubscriptionEventArgs eventArgs = null;
+        server.InterceptingUnsubscriptionAsync += e =>
+        {
+            eventArgs = e;
+            return CompletedTask.Instance;
+        };
+
+        var client = await testEnvironment.ConnectClient();
+
+        var unsubscribeOptions = testEnvironment.ClientFactory.CreateUnsubscribeOptionsBuilder().WithTopicFilter("X").WithUserProperty("A", Encoding.UTF8.GetBytes("1")).Build();
+        await client.UnsubscribeAsync(unsubscribeOptions);
+
+        CollectionAssert.AreEqual(unsubscribeOptions.UserProperties.ToList(), eventArgs.UserProperties);
+    }
+}

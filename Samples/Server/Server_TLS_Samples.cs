@@ -9,9 +9,9 @@
 using System.Net;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using MQTTnet.Server;
+using BiharMQTT.Server;
 
-namespace MQTTnet.Samples.Server;
+namespace BiharMQTT.Samples.Server;
 
 public static class Server_TLS_Samples
 {

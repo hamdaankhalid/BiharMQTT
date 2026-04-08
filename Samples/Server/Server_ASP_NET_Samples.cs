@@ -13,10 +13,10 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using MQTTnet.AspNetCore;
-using MQTTnet.Server;
+using BiharMQTT.AspNetCore;
+using BiharMQTT.Server;
 
-namespace MQTTnet.Samples.Server;
+namespace BiharMQTT.Samples.Server;
 
 public static class Server_ASP_NET_Samples
 {

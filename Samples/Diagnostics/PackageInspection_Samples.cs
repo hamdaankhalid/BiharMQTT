@@ -6,9 +6,9 @@
 // ReSharper disable UnusedMember.Global
 // ReSharper disable InconsistentNaming
 
-using MQTTnet.Diagnostics.PacketInspection;
+using BiharMQTT.Diagnostics.PacketInspection;
 
-namespace MQTTnet.Samples.Diagnostics;
+namespace BiharMQTT.Samples.Diagnostics;
 
 public static class PackageInspection_Samples
 {

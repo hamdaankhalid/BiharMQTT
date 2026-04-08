@@ -6,15 +6,15 @@
 // ReSharper disable UnusedMember.Global
 // ReSharper disable InconsistentNaming
 
-using MQTTnet.Extensions.Rpc;
-using MQTTnet.Protocol;
+using BiharMQTT.Extensions.Rpc;
+using BiharMQTT.Protocol;
 
-namespace MQTTnet.Samples.RpcClient;
+namespace BiharMQTT.Samples.RpcClient;
 
 public static class RpcClient_Samples
 {
     /*
-     * The extension MQTTnet.Extensions.Rpc (available as nuget) allows sending a request and waiting for the matching reply.
+     * The extension BiharMQTT.Extensions.Rpc (available as nuget) allows sending a request and waiting for the matching reply.
      * This is done via defining a pattern which uses the topic to correlate the request and the response.
      * From client usage it is possible to define a timeout.
      */
@@ -49,26 +49,26 @@ public static class RpcClient_Samples
      *
         // If using the MQTT client PubSubClient it must be ensured
         // that the request topic for each method is subscribed like the following.
-        mqttClient.subscribe("MQTTnet.RPC/+/ping");
-        mqttClient.subscribe("MQTTnet.RPC/+/do_something");
+        mqttClient.subscribe("BiharMQTT.RPC/+/ping");
+        mqttClient.subscribe("BiharMQTT.RPC/+/do_something");
 
         // It is not allowed to change the structure of the topic.
         // Otherwise RPC will not work.
         // So method names can be separated using an _ or . but no +, # or /.
         // If it is required to distinguish between devices
         // own rules can be defined like the following:
-        mqttClient.subscribe("MQTTnet.RPC/+/deviceA.ping");
-        mqttClient.subscribe("MQTTnet.RPC/+/deviceB.ping");
-        mqttClient.subscribe("MQTTnet.RPC/+/deviceC.getTemperature");
+        mqttClient.subscribe("BiharMQTT.RPC/+/deviceA.ping");
+        mqttClient.subscribe("BiharMQTT.RPC/+/deviceB.ping");
+        mqttClient.subscribe("BiharMQTT.RPC/+/deviceC.getTemperature");
 
         // Within the callback of the MQTT client the topic must be checked
-        // if it belongs to MQTTnet RPC. The following code shows one
+        // if it belongs to BiharMQTT RPC. The following code shows one
         // possible way of doing this.
         void mqtt_Callback(char *topic, byte *payload, unsigned int payloadLength)
         {
 	        String topicString = String(topic);
 
-	        if (topicString.startsWith("MQTTnet.RPC/")) {
+	        if (topicString.startsWith("BiharMQTT.RPC/")) {
 		        String responseTopic = topicString + String("/response");
 
 		        if (topicString.endsWith("/deviceA.ping")) {

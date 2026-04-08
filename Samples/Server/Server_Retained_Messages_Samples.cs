@@ -8,11 +8,11 @@
 
 using System.Buffers;
 using System.Text.Json;
-using MQTTnet.Packets;
-using MQTTnet.Protocol;
-using MQTTnet.Server;
+using BiharMQTT.Packets;
+using BiharMQTT.Protocol;
+using BiharMQTT.Server;
 
-namespace MQTTnet.Samples.Server;
+namespace BiharMQTT.Samples.Server;
 
 public static class Server_Retained_Messages_Samples
 {

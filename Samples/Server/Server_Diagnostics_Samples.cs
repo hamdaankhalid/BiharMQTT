@@ -2,11 +2,11 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-using MQTTnet.Internal;
-using MQTTnet.Packets;
-using MQTTnet.Server;
+using BiharMQTT.Internal;
+using BiharMQTT.Packets;
+using BiharMQTT.Server;
 
-namespace MQTTnet.Samples.Server;
+namespace BiharMQTT.Samples.Server;
 
 // ReSharper disable UnusedType.Global
 // ReSharper disable UnusedMember.Global

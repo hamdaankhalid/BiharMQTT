@@ -7,9 +7,9 @@ using System.Reflection;
 
 Console.BackgroundColor = ConsoleColor.White;
 Console.BackgroundColor = ConsoleColor.Red;
-Console.Title = "Samples - MQTTnet";
+Console.Title = "Samples - BiharMQTT";
 Console.WriteLine("----------------------------------------------");
-Console.WriteLine("-         Welcome to MQTTnet samples!        -");
+Console.WriteLine("-         Welcome to BiharMQTT samples!        -");
 Console.WriteLine("----------------------------------------------");
 Console.ResetColor();
 Console.WriteLine();

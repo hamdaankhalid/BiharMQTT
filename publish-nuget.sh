@@ -40,12 +40,10 @@ mkdir -p "$OUTPUT_DIR"
 
 # Build + Pack
 echo "→ Building and packing (v$VERSION)..."
-dotnet build MQTTnet.sln \
+dotnet build BiharMQTT.sln \
     --configuration "$CONFIGURATION" \
     /p:GeneratePackageOnBuild=true \
-    /p:PackageVersion="$VERSION" \
-    /p:FileVersion="$VERSION" \
-    /p:AssemblyVersion="$VERSION"
+    /p:Version="$VERSION"
 
 # Collect .nupkg files
 echo "→ Collecting packages..."

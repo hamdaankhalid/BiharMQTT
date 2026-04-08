@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <IsPackable>false</IsPackable>
+        <LangVersion>default</LangVersion>
+        <Nullable>disable</Nullable>
+        <NoWarn>$(NoWarn);CA1707</NoWarn>
+        <EnableMSTestRunner>true</EnableMSTestRunner>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.IO.RecyclableMemoryStream" Version="3.0.1" />
+        <PackageReference Include="MSTest" Version="4.0.2" />
+        <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="../BiharMQTT/BiharMQTT.csproj" />
+        <ProjectReference Include="..\..\Source\BiharMQTT.Server\BiharMQTT.Server.csproj" />
+        <ProjectReference Include="..\..\Source\BiharMQTT.Extensions.Rpc\BiharMQTT.Extensions.Rpc.csproj" />
+        <ProjectReference Include="..\BiharMQTT.AspnetCore\BiharMQTT.AspNetCore.csproj" />
+        <ProjectReference Include="..\BiharMQTT.Extensions.TopicTemplate\BiharMQTT.Extensions.TopicTemplate.csproj" />
+    </ItemGroup>
+
+
+    <ItemGroup>
+    <None Include=".\..\..\global.json" Link="global.json" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+</Project>

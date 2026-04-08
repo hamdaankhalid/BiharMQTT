@@ -8,11 +8,11 @@
 // ReSharper disable EmptyConstructor
 // ReSharper disable MemberCanBeMadeStatic.Local
 
-using MQTTnet.Internal;
-using MQTTnet.Protocol;
-using MQTTnet.Server;
+using BiharMQTT.Internal;
+using BiharMQTT.Protocol;
+using BiharMQTT.Server;
 
-namespace MQTTnet.Samples.Server;
+namespace BiharMQTT.Samples.Server;
 
 public static class Server_Intercepting_Samples
 {

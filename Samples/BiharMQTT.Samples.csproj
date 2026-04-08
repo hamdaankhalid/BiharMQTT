@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <IsPackable>false</IsPackable>
+        <NoWarn>$(NoWarn);CA1707</NoWarn>
+    </PropertyGroup>
+
+    <ItemGroup>
+
+        <ProjectReference Include="../Source/BiharMQTT/BiharMQTT.csproj" />
+
+        <ProjectReference Include="..\Source\BiharMQTT.AspnetCore\BiharMQTT.AspNetCore.csproj" />
+        <ProjectReference Include="..\Source\BiharMQTT.Extensions.Rpc\BiharMQTT.Extensions.Rpc.csproj" />
+        <ProjectReference Include="..\Source\BiharMQTT.Extensions.TopicTemplate\BiharMQTT.Extensions.TopicTemplate.csproj" />
+        <ProjectReference Include="..\Source\BiharMQTT.Server\BiharMQTT.Server.csproj" />
+    </ItemGroup>
+
+</Project>

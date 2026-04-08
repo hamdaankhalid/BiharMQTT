@@ -9,7 +9,7 @@
 using System;
 using System.Text;
 
-namespace MQTTnet.Samples.Client;
+namespace BiharMQTT.Samples.Client;
 
 public static class Client_Publish_Samples
 {

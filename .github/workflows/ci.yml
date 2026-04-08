@@ -18,7 +18,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build
-        run: dotnet build MQTTnet.sln --configuration Release
+        run: dotnet build BiharMQTT.sln --configuration Release
 
   test:
     runs-on: ubuntu-latest
@@ -35,4 +35,4 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Execute tests
-        run: dotnet test --framework net10.0 --configuration Release --project Source/MQTTnet.Tests/MQTTnet.Tests.csproj
+        run: dotnet test --framework net10.0 --configuration Release --project Source/MQTTnet.Tests/BiharMQTT.Tests.csproj

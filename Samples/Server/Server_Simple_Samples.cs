@@ -7,11 +7,11 @@
 // ReSharper disable InconsistentNaming
 
 using System.Globalization;
-using MQTTnet.Diagnostics.Logger;
-using MQTTnet.Protocol;
-using MQTTnet.Server;
+using BiharMQTT.Diagnostics.Logger;
+using BiharMQTT.Protocol;
+using BiharMQTT.Server;
 
-namespace MQTTnet.Samples.Server;
+namespace BiharMQTT.Samples.Server;
 
 public static class Server_Simple_Samples
 {

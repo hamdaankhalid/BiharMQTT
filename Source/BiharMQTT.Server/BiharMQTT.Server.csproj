@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <AssemblyName>BiharMQTT.Server</AssemblyName>
+        <RootNamespace>BiharMQTT.Server</RootNamespace>
+        <IsAotCompatible>true</IsAotCompatible>
+
+        <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <Description>This is the server implementation of BiharMQTT.</Description>
+        <PackageId>BiharMQTT.Server</PackageId>
+        <PackageTags>MQTT Message Queue Telemetry Transport MQTTClient MQTTServer Server MQTTBroker Broker NETStandard IoT InternetOfThings Messaging Hardware Arduino Sensor Actuator M2M ESP Smart Home Cities Automation Xamarin Blazor</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="../BiharMQTT/BiharMQTT.csproj" />
+    </ItemGroup>
+
+</Project>

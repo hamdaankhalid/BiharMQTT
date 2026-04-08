@@ -8,16 +8,16 @@
 
 using System.Globalization;
 using System.Text;
-using MQTTnet.Diagnostics.Logger;
+using BiharMQTT.Diagnostics.Logger;
 
-namespace MQTTnet.Samples.Diagnostics;
+namespace BiharMQTT.Samples.Diagnostics;
 
 public static class Logger_Samples
 {
     public static async Task Create_Custom_Logger()
     {
         /*
-         * This sample covers the creation of a custom logger which can be used to forward MQTTnet log messages
+         * This sample covers the creation of a custom logger which can be used to forward BiharMQTT log messages
          * to other loggers like Microsoft logger or Serilog or log4net etc.
          */
 

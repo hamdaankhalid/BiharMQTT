@@ -9,13 +9,13 @@
 using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
-using MQTTnet.Formatter;
-using MQTTnet.Protocol;
-using MQTTnet.Samples.Helpers;
-using MQTTnet.Server;
-using MQTTnet.Server.EnhancedAuthentication;
+using BiharMQTT.Formatter;
+using BiharMQTT.Protocol;
+using BiharMQTT.Samples.Helpers;
+using BiharMQTT.Server;
+using BiharMQTT.Server.EnhancedAuthentication;
 
-namespace MQTTnet.Samples.Client;
+namespace BiharMQTT.Samples.Client;
 
 public static class Client_Connection_Samples
 {

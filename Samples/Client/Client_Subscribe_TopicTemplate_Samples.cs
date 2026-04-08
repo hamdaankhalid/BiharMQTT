@@ -2,16 +2,16 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-using MQTTnet.Extensions.TopicTemplate;
-using MQTTnet.Protocol;
-using MQTTnet.Samples.Helpers;
+using BiharMQTT.Extensions.TopicTemplate;
+using BiharMQTT.Protocol;
+using BiharMQTT.Samples.Helpers;
 
 // ReSharper disable UnusedType.Global
 // ReSharper disable UnusedMember.Global
 // ReSharper disable InconsistentNaming
 // ReSharper disable UnusedMember.Local
 
-namespace MQTTnet.Samples.Client;
+namespace BiharMQTT.Samples.Client;
 
 public static class Client_Subscribe_TopicTemplate_Samples
 {
@@ -22,7 +22,7 @@ public static class Client_Subscribe_TopicTemplate_Samples
         /*
          * This sample subscribes to several topics in a single request.
          *
-         * This sample requires the nuget 'MQTTnet.Extensions.TopicTemplate'.
+         * This sample requires the nuget 'BiharMQTT.Extensions.TopicTemplate'.
          */
 
         var mqttFactory = new MqttClientFactory();
@@ -53,7 +53,7 @@ public static class Client_Subscribe_TopicTemplate_Samples
         /*
          * This sample subscribes to a topic.
          *
-         * This sample requires the nuget 'MQTTnet.Extensions.TopicTemplate'.
+         * This sample requires the nuget 'BiharMQTT.Extensions.TopicTemplate'.
          */
 
         var mqttFactory = new MqttClientFactory();
