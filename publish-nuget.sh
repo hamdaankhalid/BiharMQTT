@@ -37,6 +37,8 @@ echo ""
 echo "→ Cleaning previous artifacts..."
 rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"
+dotnet clean BiharMQTT.sln --configuration "$CONFIGURATION" --verbosity quiet 2>/dev/null || true
+find Source Samples -type f \( -name "*.nupkg" -o -name "*.snupkg" \) -delete 2>/dev/null || true
 
 # Build + Pack
 echo "→ Building and packing (v$VERSION)..."
