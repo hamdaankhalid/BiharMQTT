@@ -30,7 +30,7 @@ public class MessageProcessingBenchmark : BaseBenchmark
     [GlobalSetup]
     public void Setup()
     {
-        var serverOptions = new MqttServerOptionsBuilder().Build();
+        var serverOptions = new MqttServerOptionsBuilder().WithDefaultEndpoint().Build();
 
         var serverFactory = new MqttServerFactory();
         _mqttServer = serverFactory.CreateMqttServer(serverOptions);
@@ -44,5 +44,14 @@ public class MessageProcessingBenchmark : BaseBenchmark
         _mqttClient.ConnectAsync(clientOptions).GetAwaiter().GetResult();
 
         _message = new MqttApplicationMessageBuilder().WithTopic("A").Build();
+    }
+
+    [GlobalCleanup]
+    public void Cleanup()
+    {
+        _mqttClient?.DisconnectAsync().GetAwaiter().GetResult();
+        _mqttClient?.Dispose();
+        _mqttServer?.StopAsync().GetAwaiter().GetResult();
+        _mqttServer?.Dispose();
     }
 }
