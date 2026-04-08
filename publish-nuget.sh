@@ -4,26 +4,25 @@ set -euo pipefail
 # ── BiharMQTT local NuGet publish script ──
 #
 # Usage:
-#   ./publish-nuget.sh <NUGET_API_KEY> [VERSION]
+#   ./publish-nuget.sh <NUGET_API_KEY> <VERSION>
 #
 # Examples:
-#   ./publish-nuget.sh nug3t-k3y-here              # auto-version 1.0.0
-#   ./publish-nuget.sh nug3t-k3y-here 1.2.3        # explicit version
+#   ./publish-nuget.sh nug3t-k3y-here 1.2.3
 #
 # Prerequisites:
 #   - .NET SDK 8.0+ installed
 #   - A nuget.org API key (https://www.nuget.org/account/apikeys)
 
-if [ $# -lt 1 ]; then
-    echo "Usage: $0 <NUGET_API_KEY> [VERSION]"
+if [ $# -lt 2 ]; then
+    echo "Usage: $0 <NUGET_API_KEY> <VERSION>"
     echo ""
     echo "  NUGET_API_KEY  Your nuget.org API key"
-    echo "  VERSION        Package version (default: 1.0.0)"
+    echo "  VERSION        Package version (e.g. 1.0.3)"
     exit 1
 fi
 
 API_KEY="$1"
-VERSION="${2:-1.0.0}"
+VERSION="$2"
 CONFIGURATION="Release"
 OUTPUT_DIR="$(pwd)/artifacts"
 
