@@ -2,52 +2,42 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-using System.Buffers;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
-using System.Runtime.ExceptionServices;
 using System.Security.Cryptography.X509Certificates;
-using BiharMQTT.Channel;
 using BiharMQTT.Exceptions;
 using BiharMQTT.Internal;
 
 namespace BiharMQTT.Implementations;
 
-public sealed class MqttTcpChannel : IMqttChannel
+public sealed class MqttTcpChannel
 {
     readonly MqttClientOptions _clientOptions;
     readonly MqttClientTcpOptions _tcpOptions;
 
+    Socket _socket;
     Stream _stream;
 
-    public MqttTcpChannel()
+    /// <summary>
+    /// Server-side constructor. The channel takes ownership of both socket and stream.
+    /// For non-TLS: pass sslStream = null. For TLS: pass the authenticated SslStream.
+    /// </summary>
+    public MqttTcpChannel(Socket socket, SslStream sslStream, EndPoint localEndPoint, EndPoint remoteEndPoint, X509Certificate2 clientCertificate)
     {
-    }
-
-    public MqttTcpChannel(MqttClientOptions clientOptions) : this()
-    {
-        _clientOptions = clientOptions ?? throw new ArgumentNullException(nameof(clientOptions));
-        _tcpOptions = (MqttClientTcpOptions)clientOptions.ChannelOptions;
-
-        IsSecureConnection = clientOptions.ChannelOptions?.TlsOptions?.UseTls == true;
-    }
-
-    public MqttTcpChannel(Stream stream, EndPoint localEndPoint, EndPoint remoteEndPoint, X509Certificate2 clientCertificate) : this()
-    {
-        _stream = stream ?? throw new ArgumentNullException(nameof(stream));
+        _socket = socket ?? throw new ArgumentNullException(nameof(socket));
+        _stream = sslStream;
 
         LocalEndPoint = localEndPoint;
         RemoteEndPoint = remoteEndPoint;
 
-        IsSecureConnection = stream is SslStream;
+        IsSecureConnection = sslStream != null;
         ClientCertificate = clientCertificate;
     }
 
     public X509Certificate2 ClientCertificate { get; }
 
     public bool IsSecureConnection { get; }
-
 
     public EndPoint LocalEndPoint { get; private set; }
 
@@ -176,9 +166,6 @@ public sealed class MqttTcpChannel : IMqttChannel
 
     public void Dispose()
     {
-        // When the stream is disposed it will also close the socket and this will also dispose it.
-        // So there is no need to dispose the socket again.
-        // https://stackoverflow.com/questions/3601521/should-i-manually-dispose-the-socket-after-closing-it
         try
         {
             _stream?.Close();
@@ -194,74 +181,79 @@ public sealed class MqttTcpChannel : IMqttChannel
         {
             _stream = null;
         }
-    }
-
-    public async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
 
         try
         {
-            var stream = _stream;
-
-            if (stream == null)
-            {
-                return 0;
-            }
-
-            if (!stream.CanRead)
-            {
-                return 0;
-            }
-
-            return await stream.ReadAsync(buffer.AsMemory(offset, count), cancellationToken).ConfigureAwait(false);
+            _socket?.Close();
+            _socket?.Dispose();
         }
         catch (ObjectDisposedException)
         {
-            // Indicate a graceful socket close.
-            return 0;
         }
-        catch (IOException exception)
+        finally
         {
-            if (exception.InnerException is SocketException socketException)
-            {
-                ExceptionDispatchInfo.Capture(socketException).Throw();
-            }
-
-            throw;
+            _socket = null;
         }
     }
 
-    public async Task WriteAsync(ReadOnlySequence<byte> buffer, bool isEndOfPacket, CancellationToken cancellationToken)
+    /// <summary>
+    /// Zero-alloc hot-path read. For non-TLS, calls Socket.ReceiveAsync directly
+    /// (internally uses cached SAEA, returns ValueTask). For TLS, calls
+    /// SslStream.ReadAsync(Memory) which also returns ValueTask and propagates
+    /// sync completion from the underlying socket.
+    /// No CancellationToken — cancel by closing the socket.
+    /// </summary>
+    public ValueTask<int> ReadAsync(Memory<byte> buffer)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        try
+        var stream = _stream;
+        if (stream != null)
         {
-            var stream = _stream;
+            return stream.ReadAsync(buffer);
+        }
 
-            if (stream == null)
+        var socket = _socket;
+        if (socket == null)
+        {
+            return new ValueTask<int>(0);
+        }
+
+        return socket.ReceiveAsync(buffer, SocketFlags.None);
+    }
+
+    /// <summary>
+    /// Zero-alloc hot-path write. Guarantees all bytes are sent.
+    /// For non-TLS, calls Socket.SendAsync in a loop. For TLS, calls
+    /// SslStream.WriteAsync(ReadOnlyMemory) which handles completeness internally.
+    /// No CancellationToken — cancel by closing the socket.
+    /// </summary>
+    public ValueTask WriteAsync(ReadOnlyMemory<byte> buffer)
+    {
+        var stream = _stream;
+        if (stream != null)
+        {
+            return stream.WriteAsync(buffer);
+        }
+
+        var socket = _socket;
+        if (socket == null)
+        {
+            throw new MqttCommunicationException("The TCP connection is closed.");
+        }
+
+        return SendAllAsync(socket, buffer);
+    }
+
+    static async ValueTask SendAllAsync(Socket socket, ReadOnlyMemory<byte> buffer)
+    {
+        while (buffer.Length > 0)
+        {
+            var sent = await socket.SendAsync(buffer, SocketFlags.None).ConfigureAwait(false);
+            if (sent == 0)
             {
                 throw new MqttCommunicationException("The TCP connection is closed.");
             }
 
-            foreach (var segment in buffer)
-            {
-                await stream.WriteAsync(segment, cancellationToken).ConfigureAwait(false);
-            }
-        }
-        catch (ObjectDisposedException)
-        {
-            throw new MqttCommunicationException("The TCP connection is closed.");
-        }
-        catch (IOException exception)
-        {
-            if (exception.InnerException is SocketException socketException)
-            {
-                ExceptionDispatchInfo.Capture(socketException).Throw();
-            }
-
-            throw;
+            buffer = buffer.Slice(sent);
         }
     }
 

@@ -23,7 +23,7 @@ public sealed class MqttTcpServerListener : IDisposable
     readonly MqttServerTcpEndpointBaseOptions _options;
     readonly MqttServerTlsTcpEndpointOptions _tlsOptions;
 
-    CrossPlatformSocket _socket;
+    Socket _socket;
     IPEndPoint _localEndPoint;
 
     public MqttTcpServerListener(
@@ -44,7 +44,7 @@ public sealed class MqttTcpServerListener : IDisposable
         }
     }
 
-    public Func<IMqttChannelAdapter, Task> ClientHandler { get; set; }
+    public Func<MqttChannelAdapter, Task> ClientHandler { get; set; }
 
     public bool Start(bool treatErrorsAsWarning, CancellationToken cancellationToken)
     {
@@ -60,12 +60,12 @@ public sealed class MqttTcpServerListener : IDisposable
 
             _logger.Info("Starting TCP listener (Endpoint={0}, TLS={1})", _localEndPoint, _tlsOptions?.CertificateProvider != null);
 
-            _socket = new CrossPlatformSocket(_addressFamily, ProtocolType.Tcp);
+            _socket = new Socket(_addressFamily, SocketType.Stream, ProtocolType.Tcp);
 
             // Usage of socket options is described here: https://docs.microsoft.com/en-us/dotnet/api/system.net.sockets.socket.setsocketoption?view=netcore-2.2
             if (_options.ReuseAddress)
             {
-                _socket.ReuseAddress = true;
+                _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
             }
 
             if (_options.NoDelay)
@@ -80,22 +80,22 @@ public sealed class MqttTcpServerListener : IDisposable
 
             if (_options.KeepAlive.HasValue)
             {
-                _socket.KeepAlive = _options.KeepAlive.Value;
+                _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, _options.KeepAlive.Value);
             }
 
             if (_options.TcpKeepAliveInterval.HasValue)
             {
-                _socket.TcpKeepAliveInterval = _options.TcpKeepAliveInterval.Value;
+                _socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval, _options.TcpKeepAliveInterval.Value);
             }
 
             if (_options.TcpKeepAliveRetryCount.HasValue)
             {
-                _socket.TcpKeepAliveInterval = _options.TcpKeepAliveRetryCount.Value;
+                _socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveRetryCount, _options.TcpKeepAliveRetryCount.Value);
             }
 
             if (_options.TcpKeepAliveTime.HasValue)
             {
-                _socket.TcpKeepAliveTime = _options.TcpKeepAliveTime.Value;
+                _socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, _options.TcpKeepAliveTime.Value);
             }
 
             _socket.Bind(_localEndPoint);
@@ -163,10 +163,11 @@ public sealed class MqttTcpServerListener : IDisposable
         }
     }
 
-    async Task TryHandleClientConnectionAsync(CrossPlatformSocket clientSocket)
+    async Task TryHandleClientConnectionAsync(Socket clientSocket)
     {
         Stream stream = null;
         EndPoint remoteEndPoint = null;
+        var ownershipTransferred = false;
 
         try
         {
@@ -175,8 +176,9 @@ public sealed class MqttTcpServerListener : IDisposable
             _logger.Verbose("TCP client '{0}' accepted (Local endpoint={1})", remoteEndPoint, _localEndPoint);
 
             clientSocket.NoDelay = _options.NoDelay;
-            stream = clientSocket.GetStream();
-            var clientCertificate = _tlsOptions?.CertificateProvider?.GetCertificate();
+
+            SslStream sslStream = null;
+            X509Certificate2 clientCertificate = _tlsOptions?.CertificateProvider?.GetCertificate();
 
             if (clientCertificate != null)
             {
@@ -185,7 +187,9 @@ public sealed class MqttTcpServerListener : IDisposable
                     throw new InvalidOperationException("The certificate for TLS encryption must contain the private key.");
                 }
 
-                var sslStream = new SslStream(stream, false, _tlsOptions.RemoteCertificateValidationCallback);
+                // NetworkStream owns the socket = false, since MqttTcpChannel will own the socket directly.
+                stream = new NetworkStream(clientSocket, ownsSocket: false);
+                sslStream = new SslStream(stream, false, _tlsOptions.RemoteCertificateValidationCallback);
 
                 await sslStream.AuthenticateAsServerAsync(
                     new SslServerAuthenticationOptions
@@ -216,7 +220,11 @@ public sealed class MqttTcpServerListener : IDisposable
             var clientHandler = ClientHandler;
             if (clientHandler != null)
             {
-                var tcpChannel = new MqttTcpChannel(stream, _localEndPoint, remoteEndPoint, clientCertificate);
+                // Channel takes ownership of both socket and stream (SslStream or null).
+                // After this point, MqttChannelAdapter.Dispose will clean up via MqttTcpChannel.Dispose.
+                var tcpChannel = new MqttTcpChannel(clientSocket, sslStream, _localEndPoint, remoteEndPoint, clientCertificate);
+                ownershipTransferred = true;
+
                 var bufferWriter = new MqttBufferWriter(_serverOptions.WriterBufferSize, _serverOptions.WriterBufferSizeMax);
                 var packetFormatterAdapter = new MqttPacketFormatterAdapter(bufferWriter);
 
@@ -243,18 +251,23 @@ public sealed class MqttTcpServerListener : IDisposable
         }
         finally
         {
-            try
+            // Only clean up if ownership was NOT transferred to MqttTcpChannel.
+            // If transferred, the channel's Dispose (via MqttChannelAdapter) handles cleanup.
+            if (!ownershipTransferred)
             {
-                if (stream != null)
+                try
                 {
-                    await stream.DisposeAsync().ConfigureAwait(false);
-                }
+                    if (stream != null)
+                    {
+                        await stream.DisposeAsync().ConfigureAwait(false);
+                    }
 
-                clientSocket?.Dispose();
-            }
-            catch (Exception disposeException)
-            {
-                _logger.Error(disposeException, "Error while cleaning up client connection");
+                    clientSocket?.Dispose();
+                }
+                catch (Exception disposeException)
+                {
+                    _logger.Error(disposeException, "Error while cleaning up client connection");
+                }
             }
         }
 

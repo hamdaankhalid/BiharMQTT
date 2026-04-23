@@ -16,7 +16,7 @@ public class MqttTcpChannel_Tests
     public async Task Dispose_Channel_While_Used()
     {
         using var ct = new CancellationTokenSource();
-        using var serverSocket = new CrossPlatformSocket(AddressFamily.InterNetwork, ProtocolType.Tcp);
+        using var serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
 
         try
         {
@@ -39,15 +39,16 @@ public class MqttTcpChannel_Tests
                 ct.Token);
 
             var remoteEndPoint = new DnsEndPoint("localhost", serverPort);
-            using var clientSocket = new CrossPlatformSocket(AddressFamily.InterNetwork, ProtocolType.Tcp);
-            await clientSocket.ConnectAsync(remoteEndPoint, CancellationToken.None);
+            var clientSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            await clientSocket.ConnectAsync(new IPEndPoint(IPAddress.Loopback, serverPort), CancellationToken.None);
 
-            var tcpChannel = new MqttTcpChannel(clientSocket.GetStream(), new DnsEndPoint("localhost", 50000), remoteEndPoint, null);
+            var tcpChannel = new MqttTcpChannel(clientSocket, null, clientSocket.LocalEndPoint, remoteEndPoint, null);
 
             await Task.Delay(100, ct.Token);
 
             var buffer = new byte[1];
-            await tcpChannel.ReadAsync(buffer, 0, 1, ct.Token);
+            var readVt = tcpChannel.ReadAsync(buffer.AsMemory(0, 1));
+            var readResult = readVt.IsCompletedSuccessfully ? readVt.Result : await readVt;
 
             Assert.AreEqual(128, buffer[0]);
 
@@ -64,7 +65,8 @@ public class MqttTcpChannel_Tests
 
             try
             {
-                await tcpChannel.ReadAsync(buffer, 0, 1, CancellationToken.None);
+                var readVt2 = tcpChannel.ReadAsync(buffer.AsMemory(0, 1));
+                _ = readVt2.IsCompletedSuccessfully ? readVt2.Result : await readVt2;
             }
             catch (Exception exception)
             {
