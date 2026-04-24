@@ -638,6 +638,7 @@ public sealed class MqttV5PacketDecoder
         }
 
         packet.UserProperties = propertiesReader.CollectedUserProperties;
+        packet.TopicFilters ??= new List<MqttTopicFilter>();
 
         while (!_bufferReader.EndOfStream)
         {
@@ -718,6 +719,7 @@ public sealed class MqttV5PacketDecoder
         }
 
         packet.UserProperties = propertiesReader.CollectedUserProperties;
+        packet.TopicFilters ??= new List<ArraySegment<byte>>();
 
         while (!_bufferReader.EndOfStream)
         {

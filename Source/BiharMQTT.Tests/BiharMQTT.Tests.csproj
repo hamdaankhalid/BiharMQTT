@@ -18,9 +18,6 @@
     <ItemGroup>
         <ProjectReference Include="../BiharMQTT/BiharMQTT.csproj" />
         <ProjectReference Include="..\..\Source\BiharMQTT.Server\BiharMQTT.Server.csproj" />
-        <ProjectReference Include="..\..\Source\BiharMQTT.Extensions.Rpc\BiharMQTT.Extensions.Rpc.csproj" />
-        <ProjectReference Include="..\BiharMQTT.AspnetCore\BiharMQTT.AspNetCore.csproj" />
-        <ProjectReference Include="..\BiharMQTT.Extensions.TopicTemplate\BiharMQTT.Extensions.TopicTemplate.csproj" />
     </ItemGroup>
 
 

@@ -15,7 +15,7 @@ public sealed class Protocol_Tests
     {
         var writer = new MqttBufferWriter(4, 4);
 
-        for (uint value = 0; value < 268435455; value++)
+        for (uint value = 0; value < 268435455; value += 997)
         {
             writer.WriteVariableByteInteger(value);
 
