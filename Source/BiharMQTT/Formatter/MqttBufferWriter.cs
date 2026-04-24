@@ -134,6 +134,23 @@ public sealed class MqttBufferWriter
         }
     }
 
+    public void WriteBinary(ArraySegment<byte> value)
+    {
+        var length = value.Count;
+
+        EnsureAdditionalCapacity(length + 2);
+
+        _buffer[_position] = (byte)(length >> 8);
+        _buffer[_position + 1] = (byte)length;
+
+        if (length > 0)
+        {
+            MqttMemoryHelper.Copy(value.Array, value.Offset, _buffer, _position + 2, length);
+        }
+
+        IncreasePosition(length + 2);
+    }
+
     public void WriteBinary(byte[] buffer, int offset, int count)
     {
         ArgumentNullException.ThrowIfNull(buffer);
@@ -212,6 +229,28 @@ public sealed class MqttBufferWriter
         if (length > 0)
         {
             span.CopyTo(_buffer.AsSpan(_position + 2));
+        }
+
+        IncreasePosition(length + 2);
+    }
+
+    public void WriteString(ArraySegment<byte> utf8Value)
+    {
+        var length = utf8Value.Count;
+
+        if (length > EncodedStringMaxLength)
+        {
+            throw new MqttProtocolViolationException($"The maximum string length is 65535. The current string has a length of {length}.");
+        }
+
+        EnsureAdditionalCapacity(length + 2);
+
+        _buffer[_position] = (byte)(length >> 8);
+        _buffer[_position + 1] = (byte)length;
+
+        if (length > 0)
+        {
+            MqttMemoryHelper.Copy(utf8Value.Array, utf8Value.Offset, _buffer, _position + 2, length);
         }
 
         IncreasePosition(length + 2);

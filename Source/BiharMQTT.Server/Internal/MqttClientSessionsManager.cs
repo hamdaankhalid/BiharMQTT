@@ -289,12 +289,6 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
     {
         MqttConnectedClient connectedClient = null;
 
-        // Enable zero-copy payload decode. The payload slice references the
-        // per-connection reusable body buffer; DispatchViaRingBuffer copies it
-        // into the ring buffer before the next ReceiveAsync overwrites the
-        // body buffer.
-        channelAdapter.PacketFormatterAdapter.UseZeroCopyPayloadDecode = true;
-
         try
         {
             var connectPacket = await ReceiveConnectPacket(channelAdapter, cancellationToken).ConfigureAwait(false);
@@ -304,10 +298,33 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
                 return;
             }
 
-            var validatingConnectionEventArgs = await ValidateConnection(connectPacket, channelAdapter, cancellationToken).ConfigureAwait(false);
-            var connAckPacket = MqttConnAckPacketFactory.Create(validatingConnectionEventArgs);
+            var reason = ValidateConnection(connectPacket, channelAdapter);
+            // var connAckPacket = MqttConnAckPacketFactory.Create(reason);
 
-            if (validatingConnectionEventArgs.ReasonCode != MqttConnectReasonCode.Success)
+            var connAckPacket = new MqttConnAckPacket
+            {
+                ReturnCode = MqttConnectReasonCodeConverter.ToConnectReturnCode(reason),
+                ReasonCode = reason,
+                RetainAvailable = true,
+                SubscriptionIdentifiersAvailable = true,
+                SharedSubscriptionAvailable = false,
+                TopicAliasMaximum = ushort.MaxValue,
+                MaximumQoS = MqttQualityOfServiceLevel.ExactlyOnce,
+                WildcardSubscriptionAvailable = true,
+
+                AuthenticationMethod = connectPacket.AuthenticationMethod,
+                AuthenticationData = connectPacket.AuthenticationData,
+                AssignedClientIdentifier = connectPacket.AssignedClientIdentifier,
+                ReasonString = connectPacket.ReasonString,
+                ServerReference = connectPacket.ServerReference,
+                UserProperties = connectPacket.UserProperties,
+
+                ResponseInformation = null,
+                MaximumPacketSize = 0, // Unlimited,
+                ReceiveMaximum = 0 // Unlimited
+            };
+
+            if (reason != MqttConnectReasonCode.Success)
             {
                 // Send failure response here without preparing a connection and session!
                 await channelAdapter.SendPacketAsync(connAckPacket, cancellationToken).ConfigureAwait(false);
@@ -315,7 +332,7 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
             }
 
             // Pass connAckPacket so that IsSessionPresent flag can be set if the client session already exists.
-            connectedClient = await CreateClientConnection(connectPacket, connAckPacket, channelAdapter, validatingConnectionEventArgs).ConfigureAwait(false);
+            connectedClient = await CreateClientConnection(connectPacket, connAckPacket, channelAdapter).ConfigureAwait(false);
 
             await connectedClient.SendPacketAsync(connAckPacket, cancellationToken).ConfigureAwait(false);
 
@@ -350,21 +367,6 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
                             await DeleteSessionAsync(connectedClient.Id).ConfigureAwait(false);
                         }
                     }
-                }
-
-                var endpoint = connectedClient.RemoteEndPoint;
-
-                if (connectedClient.Id != null && !connectedClient.IsTakenOver && _eventContainer.ClientDisconnectedEvent.HasHandlers)
-                {
-                    var disconnectType = connectedClient.DisconnectPacket != null ? MqttClientDisconnectType.Clean : MqttClientDisconnectType.NotClean;
-                    var eventArgs = new ClientDisconnectedEventArgs(
-                        connectedClient.ConnectPacket,
-                        connectedClient.DisconnectPacket,
-                        disconnectType,
-                        endpoint,
-                        connectedClient.Session.Items);
-
-                    await _eventContainer.ClientDisconnectedEvent.InvokeAsync(eventArgs).ConfigureAwait(false);
                 }
             }
 
@@ -442,13 +444,9 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
             return;
         }
 
+        // Idk what the fuck this is doing either
         foreach (var retainedMessageMatch in subscribeResult.RetainedMessages)
         {
-            if (await _eventContainer.ShouldSkipEnqueue(string.Empty, clientId, retainedMessageMatch.ApplicationMessage))
-            {
-                continue;
-            }
-
             var publishPacket = MqttPublishPacketFactory.Create(retainedMessageMatch);
             clientSession.EnqueueDataPacket(new MqttPacketBusItem(publishPacket));
         }
@@ -465,16 +463,10 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
         return GetClientSession(clientId).Unsubscribe(fakeUnsubscribePacket, CancellationToken.None);
     }
 
-    MqttConnectedClient CreateClient(MqttConnectPacket connectPacket, MqttChannelAdapter channelAdapter, MqttSession session)
-    {
-        return new MqttConnectedClient(connectPacket, channelAdapter, session, _options, _eventContainer, this, _rootLogger);
-    }
-
     async Task<MqttConnectedClient> CreateClientConnection(
         MqttConnectPacket connectPacket,
         MqttConnAckPacket connAckPacket,
-        MqttChannelAdapter channelAdapter,
-        ValidatingConnectionEventArgs validatingConnectionEventArgs)
+        MqttChannelAdapter channelAdapter)
     {
         MqttConnectedClient connectedClient;
 
@@ -487,11 +479,10 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
             try
             {
                 MqttSession session;
-
                 // Create a new session (if required).
                 if (!_sessionsStorage.TryGetSession(connectPacket.ClientId, out oldSession))
                 {
-                    session = CreateSession(connectPacket, validatingConnectionEventArgs);
+                    session = CreateSession(connectPacket, new ConcurrentDictionary<object, object>());
                 }
                 else
                 {
@@ -499,7 +490,7 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
                     {
                         _logger.Verbose("Deleting existing session of client '{0}' due to clean start", connectPacket.ClientId);
                         _subscriberSessions.Remove(oldSession);
-                        session = CreateSession(connectPacket, validatingConnectionEventArgs);
+                        session = CreateSession(connectPacket, new ConcurrentDictionary<object, object>());
                     }
                     else
                     {
@@ -527,7 +518,7 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
                         oldConnectedClient.IsTakenOver = true;
                     }
 
-                    connectedClient = CreateClient(connectPacket, channelAdapter, session);
+                    connectedClient = new MqttConnectedClient(connectPacket, channelAdapter, session, _options, this, _rootLogger);
                     _clients[connectPacket.ClientId] = connectedClient;
                 }
             }
@@ -548,10 +539,10 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
         return connectedClient;
     }
 
-    MqttSession CreateSession(MqttConnectPacket connectPacket, ValidatingConnectionEventArgs validatingConnectionEventArgs)
+    MqttSession CreateSession(MqttConnectPacket connectPacket, IDictionary sessionItems)
     {
         _logger.Verbose("Created new session for client '{0}'", connectPacket.ClientId);
-        return new MqttSession(connectPacket, validatingConnectionEventArgs.SessionItems, _options, _eventContainer, _retainedMessagesManager, this);
+        return new MqttSession(connectPacket, sessionItems, _options, _retainedMessagesManager, this);
     }
 
     /// <summary>
@@ -594,26 +585,6 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
         string reasonString = null;
         List<MqttUserProperty> interceptorUserProperties = null;
         var reasonCode = 0;
-
-        // Invoke the buffered interceptor if registered. The struct is
-        // stack-allocated and passed by ref — zero heap allocations.
-        if (_eventContainer.InterceptingPublishBufferedEvent.HasHandlers)
-        {
-            var payloadView = slot.IsValid ? _ringBuffer.GetPayload(slot) : ReadOnlyMemory<byte>.Empty;
-            var bufferedEventArgs = new InterceptingPublishBufferedEventArgs(
-                topic, payloadView, qos, retain, senderId, cancellationToken);
-
-            _eventContainer.InterceptingPublishBufferedEvent.Invoke(ref bufferedEventArgs);
-
-            topic = bufferedEventArgs.Topic;
-            qos = bufferedEventArgs.QualityOfServiceLevel;
-            retain = bufferedEventArgs.Retain;
-            closeConnection = bufferedEventArgs.CloseConnection;
-            processPublish = bufferedEventArgs.ProcessPublish;
-            reasonString = bufferedEventArgs.ReasonString;
-            interceptorUserProperties = bufferedEventArgs.UserProperties;
-            reasonCode = (int)bufferedEventArgs.ReasonCode;
-        }
 
         if (!processPublish)
         {
@@ -791,36 +762,19 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
         }
     }
 
-    async Task<bool> ShouldSkipEnqueue(string senderId, string clientId, MqttApplicationMessage applicationMessage)
+    private static MqttConnectReasonCode ValidateConnection(MqttConnectPacket connectPacket, MqttChannelAdapter channelAdapter)
     {
-        if (!_eventContainer.InterceptingClientEnqueueEvent.HasHandlers)
-        {
-            return false;
-        }
-
-        var eventArgs = new InterceptingClientApplicationMessageEnqueueEventArgs(senderId, clientId, applicationMessage);
-        await _eventContainer.InterceptingClientEnqueueEvent.InvokeAsync(eventArgs).ConfigureAwait(false);
-
-        return !eventArgs.AcceptEnqueue;
-    }
-
-    async Task<ValidatingConnectionEventArgs> ValidateConnection(MqttConnectPacket connectPacket, MqttChannelAdapter channelAdapter, CancellationToken cancellationToken)
-    {
-        // TODO: Load session items from persisted sessions in the future.
-        var sessionItems = new ConcurrentDictionary<object, object>();
-        var eventArgs = new ValidatingConnectionEventArgs(connectPacket, channelAdapter, sessionItems, cancellationToken);
-
         // Check the client ID and set a random one if supported.
-        if (string.IsNullOrEmpty(connectPacket.ClientId) && channelAdapter.PacketFormatterAdapter.ProtocolVersion == MqttProtocolVersion.V500)
+        if (connectPacket.ClientId.Count == 0 && channelAdapter.PacketFormatterAdapter.ProtocolVersion == MqttProtocolVersion.V500)
         {
-            connectPacket.ClientId = eventArgs.AssignedClientIdentifier;
+            connectPacket.ClientId = System.Text.Encoding.UTF8.GetBytes("TODO_GENERATE_RANDOM_CLIENT_ID");
         }
 
-        if (string.IsNullOrEmpty(connectPacket.ClientId))
+        if (connectPacket.ClientId.Count == 0)
         {
-            eventArgs.ReasonCode = MqttConnectReasonCode.ClientIdentifierNotValid;
+            return MqttConnectReasonCode.ClientIdentifierNotValid;
         }
 
-        return eventArgs;
+        return MqttConnectReasonCode.Success;
     }
 }

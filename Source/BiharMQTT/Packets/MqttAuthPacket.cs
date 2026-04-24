@@ -6,16 +6,11 @@ using BiharMQTT.Protocol;
 
 namespace BiharMQTT.Packets;
 
-/// <summary>Added in MQTTv5.0.0.</summary>
 public struct MqttAuthPacket
 {
-    public byte[] AuthenticationData { get; set; }
-
-    public string AuthenticationMethod { get; set; }
-
+    public ArraySegment<byte> AuthenticationData { get; set; }
+    public ArraySegment<byte> AuthenticationMethod { get; set; }
     public MqttAuthenticateReasonCode ReasonCode { get; set; }
-
-    public string ReasonString { get; set; }
-
+    public ArraySegment<byte> ReasonString { get; set; }
     public List<MqttUserProperty> UserProperties { get; set; }
 }

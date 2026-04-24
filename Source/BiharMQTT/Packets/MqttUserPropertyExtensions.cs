@@ -2,24 +2,23 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-using System;
 using System.Text;
 
 namespace BiharMQTT.Packets;
 
 public static class MqttUserPropertyExtensions
 {
-    /// <summary>
-    ///     Reads the value of the user property as a UTF-8 string.
-    /// </summary>
-    public static string ReadValueAsString(this MqttUserProperty userProperty)
+    public static string ReadNameAsString(this MqttUserProperty property)
     {
-        var buffer = userProperty.ValueBuffer;
-        if (buffer.IsEmpty)
-        {
-            return string.Empty;
-        }
+        var seg = property.Name;
+        if (seg.Count == 0) return string.Empty;
+        return Encoding.UTF8.GetString(seg.Array!, seg.Offset, seg.Count);
+    }
 
-        return Encoding.UTF8.GetString(buffer.Span);
+    public static string ReadValueAsString(this MqttUserProperty property)
+    {
+        var seg = property.Value;
+        if (seg.Count == 0) return string.Empty;
+        return Encoding.UTF8.GetString(seg.Array!, seg.Offset, seg.Count);
     }
 }

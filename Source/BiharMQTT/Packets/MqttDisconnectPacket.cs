@@ -8,33 +8,9 @@ namespace BiharMQTT.Packets;
 
 public struct MqttDisconnectPacket
 {
-    /// <summary>
-    ///     Added in MQTTv5.
-    /// </summary>
     public MqttDisconnectReasonCode ReasonCode { get; set; }
-
-    /// <summary>
-    ///     Added in MQTTv5.
-    /// </summary>
-    public string ReasonString { get; set; }
-
-    /// <summary>
-    ///     Added in MQTTv5.
-    /// </summary>
-    public string ServerReference { get; set; }
-
-    /// <summary>
-    ///     Added in MQTTv5.
-    /// </summary>
+    public ArraySegment<byte> ReasonString { get; set; }
+    public ArraySegment<byte> ServerReference { get; set; }
     public uint SessionExpiryInterval { get; set; }
-
-    /// <summary>
-    ///     Added in MQTTv5.
-    /// </summary>
     public List<MqttUserProperty> UserProperties { get; set; }
-
-    public override readonly string ToString()
-    {
-        return $"Disconnect: [ReasonCode={ReasonCode}] [ReasonString={ReasonString}] [ServerReference={ServerReference}] [SessionExpiryInterval={SessionExpiryInterval}]";
-    }
 }

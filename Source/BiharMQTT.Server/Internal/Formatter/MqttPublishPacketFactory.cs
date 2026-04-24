@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information.
 
 using System.Buffers;
+using System.Text;
 using BiharMQTT.Exceptions;
 using BiharMQTT.Packets;
 
@@ -10,25 +11,31 @@ namespace BiharMQTT.Server.Internal.Formatter;
 
 public static class MqttPublishPacketFactory
 {
+    static ArraySegment<byte> ToSegment(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return default;
+        return new ArraySegment<byte>(Encoding.UTF8.GetBytes(value));
+    }
+
+    static ArraySegment<byte> ToSegment(byte[] value)
+    {
+        if (value == null || value.Length == 0)
+            return default;
+        return new ArraySegment<byte>(value);
+    }
+
     public static MqttPublishPacket Create(MqttConnectPacket connectPacket)
     {
-        ArgumentNullException.ThrowIfNull(connectPacket);
-
         if (!connectPacket.WillFlag)
         {
             throw new MqttProtocolViolationException("The CONNECT packet contains no will message (WillFlag).");
         }
 
-        ArraySegment<byte> willMessageBuffer = default;
-        if (connectPacket.WillMessage?.Length > 0)
-        {
-            willMessageBuffer = new ArraySegment<byte>(connectPacket.WillMessage);
-        }
-
         var packet = new MqttPublishPacket
         {
             Topic = connectPacket.WillTopic,
-            PayloadSegment = willMessageBuffer,
+            PayloadSegment = connectPacket.WillMessage,
             QualityOfServiceLevel = connectPacket.WillQoS,
             Retain = connectPacket.WillRetain,
             ContentType = connectPacket.WillContentType,
@@ -46,20 +53,18 @@ public static class MqttPublishPacketFactory
     {
         ArgumentNullException.ThrowIfNull(applicationMessage);
 
-        // Copy all values to their matching counterparts.
-        // The not supported values in MQTT 3.1.1 are not serialized (excluded) later.
         var packet = new MqttPublishPacket
         {
-            Topic = applicationMessage.Topic,
+            Topic = ToSegment(applicationMessage.Topic),
             Payload = applicationMessage.Payload,
             QualityOfServiceLevel = applicationMessage.QualityOfServiceLevel,
             Retain = applicationMessage.Retain,
             Dup = applicationMessage.Dup,
-            ContentType = applicationMessage.ContentType,
-            CorrelationData = applicationMessage.CorrelationData,
+            ContentType = ToSegment(applicationMessage.ContentType),
+            CorrelationData = ToSegment(applicationMessage.CorrelationData),
             MessageExpiryInterval = applicationMessage.MessageExpiryInterval,
             PayloadFormatIndicator = applicationMessage.PayloadFormatIndicator,
-            ResponseTopic = applicationMessage.ResponseTopic,
+            ResponseTopic = ToSegment(applicationMessage.ResponseTopic),
             TopicAlias = applicationMessage.TopicAlias,
             SubscriptionIdentifiers = applicationMessage.SubscriptionIdentifiers,
             UserProperties = applicationMessage.UserProperties
@@ -77,15 +82,15 @@ public static class MqttPublishPacketFactory
     {
         var packet = new MqttPublishPacket
         {
-            Topic = message.Topic,
+            Topic = ToSegment(message.Topic),
             Payload = payloadSnapshot,
             QualityOfServiceLevel = message.QualityOfServiceLevel,
             Retain = message.Retain,
-            ContentType = message.ContentType,
-            CorrelationData = message.CorrelationData,
+            ContentType = ToSegment(message.ContentType),
+            CorrelationData = ToSegment(message.CorrelationData),
             MessageExpiryInterval = message.MessageExpiryInterval,
             PayloadFormatIndicator = message.PayloadFormatIndicator,
-            ResponseTopic = message.ResponseTopic,
+            ResponseTopic = ToSegment(message.ResponseTopic),
             SubscriptionIdentifiers = message.SubscriptionIdentifiers,
             UserProperties = message.UserProperties
         };

@@ -8,57 +8,57 @@ namespace BiharMQTT.Packets;
 
 public struct MqttConnAckPacket
 {
-    /// <summary>
-    ///     Added in MQTTv5.
-    /// </summary>
-    public string AssignedClientIdentifier { get; set; }
+    // Bit layout: IsSessionPresent[0], RetainAvailable[1], SharedSubAvail[2],
+    //             SubIdAvail[3], WildcardSubAvail[4], MaxQoS[5-6]
+    byte _flags;
 
-    public byte[] AuthenticationData { get; set; }
-
-    public string AuthenticationMethod { get; set; }
-
-    /// <summary>
-    ///     Added in MQTTv3.1.1.
-    /// </summary>
-    public bool IsSessionPresent { get; set; }
-
+    public ArraySegment<byte> AssignedClientIdentifier { get; set; }
+    public ArraySegment<byte> AuthenticationData { get; set; }
+    public ArraySegment<byte> AuthenticationMethod { get; set; }
     public uint MaximumPacketSize { get; set; }
-
-    public MqttQualityOfServiceLevel MaximumQoS { get; set; }
-
-    /// <summary>
-    ///     Added in MQTTv5.
-    /// </summary>
     public MqttConnectReasonCode ReasonCode { get; set; }
-
-    public string ReasonString { get; set; }
-
+    public ArraySegment<byte> ReasonString { get; set; }
     public ushort ReceiveMaximum { get; set; }
-
-    public string ResponseInformation { get; set; }
-
-    public bool RetainAvailable { get; set; }
-
-    public MqttConnectReturnCode ReturnCode { get; set; }
-
+    public ArraySegment<byte> ResponseInformation { get; set; }
     public ushort ServerKeepAlive { get; set; }
-
-    public string ServerReference { get; set; }
-
+    public ArraySegment<byte> ServerReference { get; set; }
     public uint SessionExpiryInterval { get; set; }
-
-    public bool SharedSubscriptionAvailable { get; set; }
-
-    public bool SubscriptionIdentifiersAvailable { get; set; }
-
     public ushort TopicAliasMaximum { get; set; }
-
     public List<MqttUserProperty> UserProperties { get; set; }
 
-    public bool WildcardSubscriptionAvailable { get; set; }
-
-    public override string ToString()
+    public bool IsSessionPresent
     {
-        return $"ConnAck: [ReturnCode={ReturnCode}] [ReasonCode={ReasonCode}] [IsSessionPresent={IsSessionPresent}]";
+        readonly get => (_flags & 0x01) != 0;
+        set => _flags = (byte)(value ? (_flags | 0x01) : (_flags & ~0x01));
+    }
+
+    public bool RetainAvailable
+    {
+        readonly get => (_flags & 0x02) != 0;
+        set => _flags = (byte)(value ? (_flags | 0x02) : (_flags & ~0x02));
+    }
+
+    public bool SharedSubscriptionAvailable
+    {
+        readonly get => (_flags & 0x04) != 0;
+        set => _flags = (byte)(value ? (_flags | 0x04) : (_flags & ~0x04));
+    }
+
+    public bool SubscriptionIdentifiersAvailable
+    {
+        readonly get => (_flags & 0x08) != 0;
+        set => _flags = (byte)(value ? (_flags | 0x08) : (_flags & ~0x08));
+    }
+
+    public bool WildcardSubscriptionAvailable
+    {
+        readonly get => (_flags & 0x10) != 0;
+        set => _flags = (byte)(value ? (_flags | 0x10) : (_flags & ~0x10));
+    }
+
+    public MqttQualityOfServiceLevel MaximumQoS
+    {
+        readonly get => (MqttQualityOfServiceLevel)((_flags >> 5) & 0x03);
+        set => _flags = (byte)((_flags & ~0x60) | (((int)value & 0x03) << 5));
     }
 }

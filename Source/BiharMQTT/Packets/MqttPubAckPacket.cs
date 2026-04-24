@@ -9,24 +9,7 @@ namespace BiharMQTT.Packets;
 public struct MqttPubAckPacket
 {
     public ushort PacketIdentifier { get; set; }
-
-    /// <summary>
-    ///     Added in MQTTv5.
-    /// </summary>
     public MqttPubAckReasonCode ReasonCode { get; set; }
-
-    /// <summary>
-    ///     Added in MQTTv5.
-    /// </summary>
-    public string ReasonString { get; set; }
-
-    /// <summary>
-    ///     Added in MQTTv5.
-    /// </summary>
+    public ArraySegment<byte> ReasonString { get; set; }
     public List<MqttUserProperty> UserProperties { get; set; }
-
-    public override readonly string ToString()
-    {
-        return $"PubAck: [PacketIdentifier={PacketIdentifier}] [ReasonCode={ReasonCode}]";
-    }
 }

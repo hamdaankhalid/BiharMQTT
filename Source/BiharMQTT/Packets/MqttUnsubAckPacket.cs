@@ -9,30 +9,7 @@ namespace BiharMQTT.Packets;
 public struct MqttUnsubAckPacket
 {
     public ushort PacketIdentifier { get; set; }
-
-    /// <summary>
-    ///     Added in MQTTv5.
-    /// </summary>
     public List<MqttUnsubscribeReasonCode> ReasonCodes { get; set; }
-
-    /// <summary>
-    ///     Added in MQTTv5.
-    /// </summary>
-    public string ReasonString { get; set; }
-
-    /// <summary>
-    ///     Added in MQTTv5.
-    /// </summary>
+    public ArraySegment<byte> ReasonString { get; set; }
     public List<MqttUserProperty> UserProperties { get; set; }
-
-    public override readonly string ToString()
-    {
-        var reasonCodesText = string.Empty;
-        if (ReasonCodes != null)
-        {
-            reasonCodesText = string.Join(",", ReasonCodes?.Select(f => f.ToString()));
-        }
-
-        return $"UnsubAck: [PacketIdentifier={PacketIdentifier}] [ReasonCodes={reasonCodesText}] [ReasonString={ReasonString}]";
-    }
 }

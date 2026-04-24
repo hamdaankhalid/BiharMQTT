@@ -7,17 +7,6 @@ namespace BiharMQTT.Packets;
 public struct MqttUnsubscribePacket
 {
     public ushort PacketIdentifier { get; set; }
-
-    public List<string> TopicFilters { get; set; }
-
-    /// <summary>
-    ///     Added in MQTTv5.
-    /// </summary>
+    public List<ArraySegment<byte>> TopicFilters { get; set; }
     public List<MqttUserProperty> UserProperties { get; set; }
-
-    public override readonly string ToString()
-    {
-        var topicFiltersText = string.Join(",", TopicFilters);
-        return $"Unsubscribe: [PacketIdentifier={PacketIdentifier}] [TopicFilters={topicFiltersText}]";
-    }
 }

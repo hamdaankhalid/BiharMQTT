@@ -25,7 +25,7 @@ public sealed class MqttConnectedClient : IDisposable
     readonly MqttNetSourceLogger _logger;
     readonly MqttServerOptions _serverOptions;
     readonly MqttClientSessionsManager _sessionsManager;
-    readonly Dictionary<ushort, string> _topicAlias = new();
+    readonly Dictionary<ushort, ArraySegment<byte>> _topicAlias = new();
 
     CancellationTokenSource _cancellationToken = new();
     bool _disconnectPacketSent;
@@ -300,7 +300,7 @@ public sealed class MqttConnectedClient : IDisposable
 
         lock (_topicAlias)
         {
-            if (!string.IsNullOrEmpty(publishPacket.Topic))
+            if (publishPacket.Topic.Count > 0)
             {
                 _topicAlias[publishPacket.TopicAlias] = publishPacket.Topic;
             }

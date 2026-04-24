@@ -163,6 +163,25 @@ public sealed class MqttBufferReader
         return segment;
     }
 
+    /// <summary>
+    ///     Reads an MQTT UTF-8 string as a raw byte segment without allocating a string.
+    ///     Same wire format as ReadBinaryDataSlice (2-byte length prefix + data).
+    /// </summary>
+    public ArraySegment<byte> ReadStringSegment()
+    {
+        var length = ReadTwoByteInteger();
+
+        if (length == 0)
+        {
+            return EmptyBuffer.ArraySegment;
+        }
+
+        ValidateReceiveBuffer(length);
+        var segment = new ArraySegment<byte>(_buffer, _position, length);
+        _position += length;
+        return segment;
+    }
+
     public string ReadString()
     {
         var length = ReadTwoByteInteger();

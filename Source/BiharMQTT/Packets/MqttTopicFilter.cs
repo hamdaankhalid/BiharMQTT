@@ -2,53 +2,39 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using System.Runtime.CompilerServices;
 using BiharMQTT.Protocol;
 
 namespace BiharMQTT.Packets;
 
 public struct MqttTopicFilter
 {
-    /// <summary>
-    ///     Gets or sets a value indicating whether the sender will not receive its own published application messages.
-    ///     <remarks>MQTT 5.0.0+ feature.</remarks>
-    /// </summary>
-    public bool NoLocal { get; set; }
+    // Bit layout: NoLocal[0], RetainAsPublished[1], QoS[2-3], RetainHandling[4-5]
+    byte _flags;
 
-    /// <summary>
-    ///     Gets or sets the quality of service level.
-    ///     The Quality of Service (QoS) level is an agreement between the sender of a message and the receiver of a message
-    ///     that defines the guarantee of delivery for a specific message.
-    ///     There are 3 QoS levels in MQTT:
-    ///     - At most once  (0): Message gets delivered no time, once or multiple times.
-    ///     - At least once (1): Message gets delivered at least once (one time or more often).
-    ///     - Exactly once  (2): Message gets delivered exactly once (It's ensured that the message only comes once).
-    /// </summary>
-    public MqttQualityOfServiceLevel QualityOfServiceLevel { get; set; }
+    public ArraySegment<byte> Topic { get; set; }
 
-    /// <summary>
-    ///     Gets or sets a value indicating whether messages are retained as published or not.
-    ///     <remarks>MQTT 5.0.0+ feature.</remarks>
-    /// </summary>
-    public bool RetainAsPublished { get; set; }
-
-    /// <summary>
-    ///     Gets or sets the retain handling.
-    ///     <remarks>MQTT 5.0.0+ feature.</remarks>
-    /// </summary>
-    public MqttRetainHandling RetainHandling { get; set; }
-
-    /// <summary>
-    ///     Gets or sets the MQTT topic.
-    ///     In MQTT, the word topic refers to an UTF-8 string that the broker uses to filter messages for each connected
-    ///     client.
-    ///     The topic consists of one or more topic levels. Each topic level is separated by a forward slash (topic level
-    ///     separator).
-    /// </summary>
-    public string Topic { get; set; }
-
-    public override readonly string ToString()
+    public bool NoLocal
     {
-        return
-            $"TopicFilter: [Topic={Topic}] [QualityOfServiceLevel={QualityOfServiceLevel}] [NoLocal={NoLocal}] [RetainAsPublished={RetainAsPublished}] [RetainHandling={RetainHandling}]";
+        readonly get => (_flags & 0x01) != 0;
+        set => _flags = (byte)(value ? (_flags | 0x01) : (_flags & ~0x01));
+    }
+
+    public bool RetainAsPublished
+    {
+        readonly get => (_flags & 0x02) != 0;
+        set => _flags = (byte)(value ? (_flags | 0x02) : (_flags & ~0x02));
+    }
+
+    public MqttQualityOfServiceLevel QualityOfServiceLevel
+    {
+        readonly get => (MqttQualityOfServiceLevel)((_flags >> 2) & 0x03);
+        set => _flags = (byte)((_flags & ~0x0C) | (((int)value & 0x03) << 2));
+    }
+
+    public MqttRetainHandling RetainHandling
+    {
+        readonly get => (MqttRetainHandling)((_flags >> 4) & 0x03);
+        set => _flags = (byte)((_flags & ~0x30) | (((int)value & 0x03) << 4));
     }
 }
