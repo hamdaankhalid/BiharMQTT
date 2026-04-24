@@ -206,7 +206,7 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
 
     byte EncodeConnectPacket(MqttConnectPacket packet)
     {
-        if (string.IsNullOrEmpty(packet.ClientId) && !packet.CleanSession)
+        if (packet.ClientId.Count == 0 && !packet.CleanSession)
         {
             throw new MqttProtocolViolationException("CleanSession must be set if ClientId is empty [MQTT-3.1.3-7].");
         }
@@ -231,17 +231,17 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
             }
         }
 
-        if (packet.Password != null && packet.Username == null)
+        if (packet.Password.Count > 0 && packet.Username.Count == 0)
         {
             throw new MqttProtocolViolationException("If the User Name Flag is set to 0, the Password Flag MUST be set to 0 [MQTT-3.1.2-22].");
         }
 
-        if (packet.Password != null)
+        if (packet.Password.Count > 0)
         {
             connectFlags |= 0x40;
         }
 
-        if (packet.Username != null)
+        if (packet.Username.Count > 0)
         {
             connectFlags |= 0x80;
         }
@@ -281,12 +281,12 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
             _bufferWriter.WriteBinary(packet.WillMessage);
         }
 
-        if (packet.Username != null)
+        if (packet.Username.Count > 0)
         {
             _bufferWriter.WriteString(packet.Username);
         }
 
-        if (packet.Password != null)
+        if (packet.Password.Count > 0)
         {
             _bufferWriter.WriteBinary(packet.Password);
         }

@@ -78,9 +78,6 @@ public sealed class MqttV5PacketDecoder
             MaximumQoS = MqttQualityOfServiceLevel.ExactlyOnce
         };
 
-        // Also set the return code of MQTT 3.1.1 for backward compatibility and debugging purposes.
-        packet.ReturnCode = MqttConnectReasonCodeConverter.ToConnectReturnCode(packet.ReasonCode);
-
         var propertiesReader = new MqttV5PropertiesReader(_bufferReader);
         while (propertiesReader.MoveNext())
         {
@@ -246,7 +243,7 @@ public sealed class MqttV5PacketDecoder
 
         packet.UserProperties = propertiesReader.CollectedUserProperties;
 
-        packet.ClientId = _bufferReader.ReadString();
+        packet.ClientId = _bufferReader.ReadStringSegment();
 
         if (packet.WillFlag)
         {
@@ -284,19 +281,19 @@ public sealed class MqttV5PacketDecoder
                 }
             }
 
-            packet.WillTopic = _bufferReader.ReadString();
-            packet.WillMessage = _bufferReader.ReadBinaryData();
+            packet.WillTopic = _bufferReader.ReadStringSegment();
+            packet.WillMessage = _bufferReader.ReadBinaryDataSlice();
             packet.WillUserProperties = willPropertiesReader.CollectedUserProperties;
         }
 
         if (usernameFlag)
         {
-            packet.Username = _bufferReader.ReadString();
+            packet.Username = _bufferReader.ReadStringSegment();
         }
 
         if (passwordFlag)
         {
-            packet.Password = _bufferReader.ReadBinaryData();
+            packet.Password = _bufferReader.ReadBinaryDataSlice();
         }
 
         return packet;
@@ -435,7 +432,7 @@ public sealed class MqttV5PacketDecoder
 
         var packet = new MqttPublishPacket
         {
-            Topic = _bufferReader.ReadString(),
+            Topic = _bufferReader.ReadStringSegment(),
             Retain = retain,
             QualityOfServiceLevel = qos,
             Dup = dup
@@ -638,7 +635,7 @@ public sealed class MqttV5PacketDecoder
 
         while (!_bufferReader.EndOfStream)
         {
-            var topic = _bufferReader.ReadString();
+            var topic = _bufferReader.ReadStringSegment();
             var options = _bufferReader.ReadByte();
 
             var qos = (MqttQualityOfServiceLevel)(options & 3);
@@ -718,7 +715,7 @@ public sealed class MqttV5PacketDecoder
 
         while (!_bufferReader.EndOfStream)
         {
-            packet.TopicFilters.Add(_bufferReader.ReadString());
+            packet.TopicFilters.Add(_bufferReader.ReadStringSegment());
         }
 
         return packet;

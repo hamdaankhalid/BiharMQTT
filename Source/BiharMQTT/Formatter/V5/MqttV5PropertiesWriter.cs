@@ -24,29 +24,29 @@ public sealed class MqttV5PropertiesWriter
         _bufferWriter.Cleanup();
     }
 
-    public void WriteAssignedClientIdentifier(string value)
+    public void WriteAssignedClientIdentifier(ArraySegment<byte> value)
     {
         Write(MqttPropertyId.AssignedClientIdentifier, value);
     }
 
-    public void WriteAuthenticationData(byte[] value)
+    public void WriteAuthenticationData(ArraySegment<byte> value)
     {
-        Write(MqttPropertyId.AuthenticationData, value);
+        WriteBinaryProperty(MqttPropertyId.AuthenticationData, value);
     }
 
-    public void WriteAuthenticationMethod(string value)
+    public void WriteAuthenticationMethod(ArraySegment<byte> value)
     {
         Write(MqttPropertyId.AuthenticationMethod, value);
     }
 
-    public void WriteContentType(string value)
+    public void WriteContentType(ArraySegment<byte> value)
     {
         Write(MqttPropertyId.ContentType, value);
     }
 
-    public void WriteCorrelationData(byte[] value)
+    public void WriteCorrelationData(ArraySegment<byte> value)
     {
-        Write(MqttPropertyId.CorrelationData, value);
+        WriteBinaryProperty(MqttPropertyId.CorrelationData, value);
     }
 
     public void WriteMaximumPacketSize(uint value)
@@ -94,7 +94,7 @@ public sealed class MqttV5PropertiesWriter
         Write(MqttPropertyId.PayloadFormatIndicator, (byte)value);
     }
 
-    public void WriteReasonString(string value)
+    public void WriteReasonString(ArraySegment<byte> value)
     {
         Write(MqttPropertyId.ReasonString, value);
     }
@@ -132,12 +132,12 @@ public sealed class MqttV5PropertiesWriter
         Write(MqttPropertyId.RequestResponseInformation, true);
     }
 
-    public void WriteResponseInformation(string value)
+    public void WriteResponseInformation(ArraySegment<byte> value)
     {
         Write(MqttPropertyId.ResponseInformation, value);
     }
 
-    public void WriteResponseTopic(string value)
+    public void WriteResponseTopic(ArraySegment<byte> value)
     {
         Write(MqttPropertyId.ResponseTopic, value);
     }
@@ -163,7 +163,7 @@ public sealed class MqttV5PropertiesWriter
         Write(MqttPropertyId.ServerKeepAlive, value);
     }
 
-    public void WriteServerReference(string value)
+    public void WriteServerReference(ArraySegment<byte> value)
     {
         Write(MqttPropertyId.ServerReference, value);
     }
@@ -260,7 +260,7 @@ public sealed class MqttV5PropertiesWriter
         {
             _bufferWriter.WriteByte((byte)MqttPropertyId.UserProperty);
             _bufferWriter.WriteString(property.Name);
-            _bufferWriter.WriteString(property.ValueBuffer);
+            _bufferWriter.WriteString(property.Value);
         }
     }
 
@@ -304,9 +304,9 @@ public sealed class MqttV5PropertiesWriter
         _bufferWriter.WriteTwoByteInteger(value);
     }
 
-    void Write(MqttPropertyId id, string value)
+    void Write(MqttPropertyId id, ArraySegment<byte> value)
     {
-        if (string.IsNullOrEmpty(value))
+        if (value.Count == 0)
         {
             return;
         }
@@ -315,9 +315,9 @@ public sealed class MqttV5PropertiesWriter
         _bufferWriter.WriteString(value);
     }
 
-    void Write(MqttPropertyId id, byte[] value)
+    void WriteBinaryProperty(MqttPropertyId id, ArraySegment<byte> value)
     {
-        if (value == null)
+        if (value.Count == 0)
         {
             return;
         }

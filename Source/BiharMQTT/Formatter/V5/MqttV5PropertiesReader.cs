@@ -59,15 +59,15 @@ public struct MqttV5PropertiesReader
             // final result list.
             if (CurrentPropertyId == MqttPropertyId.UserProperty)
             {
-                var name = _body.ReadString();
-                var valueBuffer = ReadUserPropertyValueBuffer();
+                var name = _body.ReadStringSegment();
+                var value = _body.ReadStringSegment();
 
                 if (CollectedUserProperties == null)
                 {
                     CollectedUserProperties = new List<MqttUserProperty>();
                 }
 
-                CollectedUserProperties.Add(new MqttUserProperty(name, valueBuffer));
+                CollectedUserProperties.Add(new MqttUserProperty(name, value));
                 continue;
             }
 
@@ -75,29 +75,29 @@ public struct MqttV5PropertiesReader
         }
     }
 
-    public string ReadAssignedClientIdentifier()
+    public ArraySegment<byte> ReadAssignedClientIdentifier()
     {
-        return _body.ReadString();
+        return _body.ReadStringSegment();
     }
 
-    public byte[] ReadAuthenticationData()
+    public ArraySegment<byte> ReadAuthenticationData()
     {
-        return _body.ReadBinaryData();
+        return _body.ReadBinaryDataSlice();
     }
 
-    public string ReadAuthenticationMethod()
+    public ArraySegment<byte> ReadAuthenticationMethod()
     {
-        return _body.ReadString();
+        return _body.ReadStringSegment();
     }
 
-    public string ReadContentType()
+    public ArraySegment<byte> ReadContentType()
     {
-        return _body.ReadString();
+        return _body.ReadStringSegment();
     }
 
-    public byte[] ReadCorrelationData()
+    public ArraySegment<byte> ReadCorrelationData()
     {
-        return _body.ReadBinaryData();
+        return _body.ReadBinaryDataSlice();
     }
 
     public uint ReadMaximumPacketSize()
@@ -126,9 +126,9 @@ public struct MqttV5PropertiesReader
         return (MqttPayloadFormatIndicator)_body.ReadByte();
     }
 
-    public string ReadReasonString()
+    public ArraySegment<byte> ReadReasonString()
     {
-        return _body.ReadString();
+        return _body.ReadStringSegment();
     }
 
     public ushort ReadReceiveMaximum()
@@ -136,14 +136,14 @@ public struct MqttV5PropertiesReader
         return _body.ReadTwoByteInteger();
     }
 
-    public string ReadResponseInformation()
+    public ArraySegment<byte> ReadResponseInformation()
     {
-        return _body.ReadString();
+        return _body.ReadStringSegment();
     }
 
-    public string ReadResponseTopic()
+    public ArraySegment<byte> ReadResponseTopic()
     {
-        return _body.ReadString();
+        return _body.ReadStringSegment();
     }
 
     public bool ReadRetainAvailable()
@@ -156,9 +156,9 @@ public struct MqttV5PropertiesReader
         return _body.ReadTwoByteInteger();
     }
 
-    public string ReadServerReference()
+    public ArraySegment<byte> ReadServerReference()
     {
-        return _body.ReadString();
+        return _body.ReadStringSegment();
     }
 
     public uint ReadSessionExpiryInterval()
@@ -189,11 +189,6 @@ public struct MqttV5PropertiesReader
     public ushort ReadTopicAliasMaximum()
     {
         return _body.ReadTwoByteInteger();
-    }
-
-    public ReadOnlyMemory<byte> ReadUserPropertyValueBuffer()
-    {
-        return _body.ReadBinaryData();
     }
 
     public bool ReadWildcardSubscriptionAvailable()
