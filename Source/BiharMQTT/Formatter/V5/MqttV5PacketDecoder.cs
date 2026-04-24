@@ -11,12 +11,9 @@ namespace BiharMQTT.Formatter.V5;
 
 public sealed class MqttV5PacketDecoder
 {
-    readonly MqttBufferReader _bufferReader = new();
+    static readonly byte[] MqttProtocolName = "MQTT"u8.ToArray();
 
-    /// <summary>
-    ///     Provides access to the buffer reader for configuring zero-copy decode.
-    /// </summary>
-    public MqttBufferReader BufferReader => _bufferReader;
+    readonly MqttBufferReader _bufferReader = new();
 
     public MqttPacket Decode(ReceivedMqttPacket receivedMqttPacket)
     {
@@ -209,10 +206,14 @@ public sealed class MqttV5PacketDecoder
             RequestProblemInformation = true
         };
 
-        var protocolName = _bufferReader.ReadString();
+        if (!_bufferReader.ReadNextStringEquals(MqttProtocolName))
+        {
+            throw new MqttProtocolViolationException("MQTT protocol name does not match MQTT v5.");
+        }
+
         var protocolVersion = _bufferReader.ReadByte();
 
-        if (protocolName != "MQTT" && protocolVersion != 5)
+        if (protocolVersion != 5)
         {
             throw new MqttProtocolViolationException("MQTT protocol name and version do not match MQTT v5.");
         }

@@ -18,13 +18,6 @@ public sealed class MqttBufferReader
     int _offset;
     int _position;
 
-    /// <summary>
-    ///     When <c>true</c>, <see cref="ReadRemainingData" /> returns a zero-copy
-    ///     slice of the body buffer instead of allocating and copying.  The caller
-    ///     must ensure the body buffer outlives any references to the returned data.
-    /// </summary>
-    public bool UseZeroCopySlice { get; set; }
-
     public int BytesLeft => _maxPosition - _position;
 
     public bool EndOfStream => BytesLeft == 0;
@@ -98,6 +91,88 @@ public sealed class MqttBufferReader
 
         return segment;
     }
+
+
+    public bool PeekEqualsSequence(ReadOnlySpan<byte> str, out int bytesToSkip)
+    {
+        var stringLength = ReadTwoByteInteger();
+
+        if (stringLength == 0)
+        {
+            bytesToSkip = 2;
+            _position -= 2; // Reset to before the length prefix
+            return str.Length == 0;
+        }
+
+        ValidateReceiveBuffer(stringLength);
+        bool res = _buffer.AsSpan(_position, stringLength).SequenceEqual(str);
+
+        _position -= 2; // Reset to before the length prefix
+        bytesToSkip = 2 + stringLength; // Total bytes: length prefix + string data
+        return res;
+    }
+
+    /// <summary>
+    ///     Reads the next length-prefixed string and compares it against the expected
+    ///     UTF-8 byte sequence without allocating a managed string. Advances position
+    ///     past the entire string regardless of whether it matches.
+    /// </summary>
+    public bool ReadNextStringEquals(ReadOnlySpan<byte> expected)
+    {
+        var length = ReadTwoByteInteger();
+
+        if (length == 0)
+        {
+            return expected.Length == 0;
+        }
+
+        ValidateReceiveBuffer(length);
+        bool match = _buffer.AsSpan(_position, length).SequenceEqual(expected);
+        _position += length;
+        return match;
+    }
+
+    /// <summary>
+    ///     Returns the next length-prefixed binary data as an <see cref="ArraySegment{T}" />
+    ///     referencing the existing body buffer directly — no allocation, no copy.
+    ///     The segment is only valid as long as the underlying body buffer is alive.
+    /// </summary>
+    public ArraySegment<byte> ReadBinaryDataSlice()
+    {
+        var length = ReadTwoByteInteger();
+
+        if (length == 0)
+        {
+            return EmptyBuffer.ArraySegment;
+        }
+
+        ValidateReceiveBuffer(length);
+        var segment = new ArraySegment<byte>(_buffer, _position, length);
+        _position += length;
+        return segment;
+    }
+
+    /// <summary>
+    ///     Advances position past the next length-prefixed string without reading it.
+    /// </summary>
+    public void SkipString()
+    {
+        var length = ReadTwoByteInteger();
+        if (length > 0)
+        {
+            ValidateReceiveBuffer(length);
+            _position += length;
+        }
+    }
+
+    /// <summary>
+    ///     Advances position past the next length-prefixed binary data without reading it.
+    /// </summary>
+    public void SkipBinaryData()
+    {
+        SkipString(); // Same wire format: 2-byte length prefix + data
+    }
+
 
     public string ReadString()
     {

@@ -16,6 +16,8 @@ public sealed class MqttV3PacketFormatter : IMqttPacketFormatter
     const int FixedHeaderSize = 1;
 
     static readonly MqttDisconnectPacket DisconnectPacket = new();
+    static readonly byte[] MqttProtocolName = "MQTT"u8.ToArray();
+    static readonly byte[] MqIsdpProtocolName = "MQIsdp"u8.ToArray();
 
     readonly MqttBufferReader _bufferReader = new();
     readonly MqttBufferWriter _bufferWriter;
@@ -161,13 +163,14 @@ public sealed class MqttV3PacketFormatter : IMqttPacketFormatter
 
         _bufferReader.SetBuffer(body.Array, body.Offset, body.Count);
 
-        var protocolName = _bufferReader.ReadString();
-        var protocolVersion = _bufferReader.ReadByte();
-
-        if (protocolName != "MQTT" && protocolName != "MQIsdp")
+        if (!_bufferReader.PeekEqualsSequence(MqttProtocolName, out var bytesToSkip) &&
+            !_bufferReader.PeekEqualsSequence(MqIsdpProtocolName, out bytesToSkip))
         {
             throw new MqttProtocolViolationException("MQTT protocol name do not match MQTT v3.");
         }
+
+        _bufferReader.Seek(_bufferReader.Position + bytesToSkip);
+        var protocolVersion = _bufferReader.ReadByte();
 
         var tryPrivate = (protocolVersion & 0x80) > 0;
         protocolVersion &= 0x7F;
