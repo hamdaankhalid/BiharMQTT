@@ -15,7 +15,7 @@ public struct MqttV5PropertiesReader
     readonly int _length;
     readonly int _targetOffset;
 
-    public MqttV5PropertiesReader(MqttBufferReader body)
+    public MqttV5PropertiesReader(MqttBufferReader body, List<MqttUserProperty> reusableUserProperties)
     {
         _body = body ?? throw new ArgumentNullException(nameof(body));
 
@@ -31,8 +31,11 @@ public struct MqttV5PropertiesReader
         _targetOffset = body.Position + _length;
 
         CollectedUserProperties = null;
+        _reusableUserProperties = reusableUserProperties;
         CurrentPropertyId = MqttPropertyId.None;
     }
+
+    readonly List<MqttUserProperty> _reusableUserProperties;
 
     public List<MqttUserProperty> CollectedUserProperties { get; private set; }
 
@@ -64,7 +67,8 @@ public struct MqttV5PropertiesReader
 
                 if (CollectedUserProperties == null)
                 {
-                    CollectedUserProperties = new List<MqttUserProperty>();
+                    _reusableUserProperties.Clear();
+                    CollectedUserProperties = _reusableUserProperties;
                 }
 
                 CollectedUserProperties.Add(new MqttUserProperty(name, value));

@@ -8,8 +8,7 @@ namespace BiharMQTT.Internal;
 
 public struct MqttPacketBusItem
 {
-    readonly AsyncTaskCompletionSource<bool> _promise = new();
-
+    AsyncTaskCompletionSource<bool> _promise;
     int _terminated;
 
     public MqttPacketBusItem(MqttPacketBuffer packetBuffer)
@@ -35,25 +34,30 @@ public struct MqttPacketBusItem
 
     public void Cancel()
     {
-        _promise.TrySetCanceled();
+        _promise?.TrySetCanceled();
         InvokeOnTerminated();
     }
 
     public void Complete()
     {
-        _promise.TrySetResult(true);
+        _promise?.TrySetResult(true);
         InvokeOnTerminated();
         Completed?.Invoke(this, EventArgs.Empty);
     }
 
     public void Fail(Exception exception)
     {
-        _promise.TrySetException(exception);
+        _promise?.TrySetException(exception);
         InvokeOnTerminated();
     }
 
+    /// <summary>
+    ///     Lazily allocates the promise only when someone actually awaits the bus item.
+    ///     On the hot data path nobody calls WaitAsync, so no allocation occurs.
+    /// </summary>
     public Task WaitAsync()
     {
+        _promise ??= new AsyncTaskCompletionSource<bool>();
         return _promise.Task;
     }
 

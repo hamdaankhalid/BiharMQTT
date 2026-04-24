@@ -26,7 +26,12 @@ public sealed class MqttPacketBus : IDisposable
         {
             lock (_syncRoot)
             {
-                return _partitions.Sum(p => p.Count);
+                var count = 0;
+                for (var i = 0; i < _partitions.Length; i++)
+                {
+                    count += _partitions[i].Count;
+                }
+                return count;
             }
         }
     }
@@ -132,7 +137,13 @@ public sealed class MqttPacketBus : IDisposable
     {
         lock (_syncRoot)
         {
-            return _partitions[(int)partition].Select(i => i.PacketBuffer).ToList();
+            var source = _partitions[(int)partition];
+            var result = new List<MqttPacketBuffer>(source.Count);
+            foreach (var item in source)
+            {
+                result.Add(item.PacketBuffer);
+            }
+            return result;
         }
     }
 

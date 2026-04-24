@@ -33,6 +33,9 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
     readonly MqttSessionsStorage _sessionsStorage = new();
     readonly HashSet<MqttSession> _subscriberSessions = [];
 
+    // Reusable snapshot list for dispatch — avoids per-publish List allocation.
+    readonly List<MqttSession> _subscriberSessionsSnapshot = [];
+
     public MqttClientSessionsManager(
         MqttServerOptions options,
         MqttRetainedMessagesManager retainedMessagesManager,
@@ -604,7 +607,9 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
             _sessionsManagementLock.EnterReadLock();
             try
             {
-                subscriberSessions = _subscriberSessions.ToList();
+                _subscriberSessionsSnapshot.Clear();
+                _subscriberSessionsSnapshot.AddRange(_subscriberSessions);
+                subscriberSessions = _subscriberSessionsSnapshot;
             }
             finally
             {

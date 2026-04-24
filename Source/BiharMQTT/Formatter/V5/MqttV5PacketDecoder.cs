@@ -10,9 +10,15 @@ namespace BiharMQTT.Formatter.V5;
 
 public sealed class MqttV5PacketDecoder
 {
-    static readonly byte[] MqttProtocolName = "MQTT"u8.ToArray();
+    static readonly byte[] MqttProtocolName = [0x4D, 0x51, 0x54, 0x54]; // "MQTT"
 
     readonly MqttBufferReader _bufferReader = new();
+
+    // Reusable lists — cleared before each use. Avoids per-packet List allocation.
+    readonly List<uint> _reusableSubscriptionIds = new();
+    readonly List<MqttUserProperty> _reusableUserProperties = new();
+    readonly List<MqttSubscribeReasonCode> _reusableSubReasonCodes = new();
+    readonly List<MqttUnsubscribeReasonCode> _reusableUnsubReasonCodes = new();
 
     public MqttAuthPacket DecodeAuthPacket(ArraySegment<byte> body)
     {
@@ -30,7 +36,7 @@ public sealed class MqttV5PacketDecoder
 
         packet.ReasonCode = (MqttAuthenticateReasonCode)_bufferReader.ReadByte();
 
-        var propertiesReader = new MqttV5PropertiesReader(_bufferReader);
+        var propertiesReader = new MqttV5PropertiesReader(_bufferReader, _reusableUserProperties);
         while (propertiesReader.MoveNext())
         {
             if (propertiesReader.CurrentPropertyId == MqttPropertyId.AuthenticationMethod)
@@ -78,7 +84,7 @@ public sealed class MqttV5PacketDecoder
             MaximumQoS = MqttQualityOfServiceLevel.ExactlyOnce
         };
 
-        var propertiesReader = new MqttV5PropertiesReader(_bufferReader);
+        var propertiesReader = new MqttV5PropertiesReader(_bufferReader, _reusableUserProperties);
         while (propertiesReader.MoveNext())
         {
             if (propertiesReader.CurrentPropertyId == MqttPropertyId.SessionExpiryInterval)
@@ -200,7 +206,7 @@ public sealed class MqttV5PacketDecoder
 
         packet.KeepAlivePeriod = _bufferReader.ReadTwoByteInteger();
 
-        var propertiesReader = new MqttV5PropertiesReader(_bufferReader);
+        var propertiesReader = new MqttV5PropertiesReader(_bufferReader, _reusableUserProperties);
         while (propertiesReader.MoveNext())
         {
             if (propertiesReader.CurrentPropertyId == MqttPropertyId.SessionExpiryInterval)
@@ -247,7 +253,7 @@ public sealed class MqttV5PacketDecoder
 
         if (packet.WillFlag)
         {
-            var willPropertiesReader = new MqttV5PropertiesReader(_bufferReader);
+            var willPropertiesReader = new MqttV5PropertiesReader(_bufferReader, _reusableUserProperties);
 
             while (willPropertiesReader.MoveNext())
             {
@@ -319,7 +325,7 @@ public sealed class MqttV5PacketDecoder
             ReasonCode = (MqttDisconnectReasonCode)_bufferReader.ReadByte()
         };
 
-        var propertiesReader = new MqttV5PropertiesReader(_bufferReader);
+        var propertiesReader = new MqttV5PropertiesReader(_bufferReader, _reusableUserProperties);
         while (propertiesReader.MoveNext())
         {
             if (propertiesReader.CurrentPropertyId == MqttPropertyId.SessionExpiryInterval)
@@ -364,7 +370,7 @@ public sealed class MqttV5PacketDecoder
 
         packet.ReasonCode = (MqttPubAckReasonCode)_bufferReader.ReadByte();
 
-        var propertiesReader = new MqttV5PropertiesReader(_bufferReader);
+        var propertiesReader = new MqttV5PropertiesReader(_bufferReader, _reusableUserProperties);
         while (propertiesReader.MoveNext())
         {
             if (propertiesReader.CurrentPropertyId == MqttPropertyId.ReasonString)
@@ -401,7 +407,7 @@ public sealed class MqttV5PacketDecoder
 
         packet.ReasonCode = (MqttPubCompReasonCode)_bufferReader.ReadByte();
 
-        var propertiesReader = new MqttV5PropertiesReader(_bufferReader);
+        var propertiesReader = new MqttV5PropertiesReader(_bufferReader, _reusableUserProperties);
         while (propertiesReader.MoveNext())
         {
             if (propertiesReader.CurrentPropertyId == MqttPropertyId.ReasonString)
@@ -443,7 +449,7 @@ public sealed class MqttV5PacketDecoder
             packet.PacketIdentifier = _bufferReader.ReadTwoByteInteger();
         }
 
-        var propertiesReader = new MqttV5PropertiesReader(_bufferReader);
+        var propertiesReader = new MqttV5PropertiesReader(_bufferReader, _reusableUserProperties);
         while (propertiesReader.MoveNext())
         {
             if (propertiesReader.CurrentPropertyId == MqttPropertyId.PayloadFormatIndicator)
@@ -470,7 +476,8 @@ public sealed class MqttV5PacketDecoder
             {
                 if (packet.SubscriptionIdentifiers == null)
                 {
-                    packet.SubscriptionIdentifiers = new List<uint>();
+                    _reusableSubscriptionIds.Clear();
+                    packet.SubscriptionIdentifiers = _reusableSubscriptionIds;
                 }
 
                 packet.SubscriptionIdentifiers.Add(propertiesReader.ReadSubscriptionIdentifier());
@@ -514,7 +521,7 @@ public sealed class MqttV5PacketDecoder
 
         packet.ReasonCode = (MqttPubRecReasonCode)_bufferReader.ReadByte();
 
-        var propertiesReader = new MqttV5PropertiesReader(_bufferReader);
+        var propertiesReader = new MqttV5PropertiesReader(_bufferReader, _reusableUserProperties);
         while (propertiesReader.MoveNext())
         {
             if (propertiesReader.CurrentPropertyId == MqttPropertyId.ReasonString)
@@ -551,7 +558,7 @@ public sealed class MqttV5PacketDecoder
 
         packet.ReasonCode = (MqttPubRelReasonCode)_bufferReader.ReadByte();
 
-        var propertiesReader = new MqttV5PropertiesReader(_bufferReader);
+        var propertiesReader = new MqttV5PropertiesReader(_bufferReader, _reusableUserProperties);
         while (propertiesReader.MoveNext())
         {
             if (propertiesReader.CurrentPropertyId == MqttPropertyId.ReasonString)
@@ -580,7 +587,7 @@ public sealed class MqttV5PacketDecoder
             PacketIdentifier = _bufferReader.ReadTwoByteInteger()
         };
 
-        var propertiesReader = new MqttV5PropertiesReader(_bufferReader);
+        var propertiesReader = new MqttV5PropertiesReader(_bufferReader, _reusableUserProperties);
         while (propertiesReader.MoveNext())
         {
             if (propertiesReader.CurrentPropertyId == MqttPropertyId.ReasonString)
@@ -595,12 +602,13 @@ public sealed class MqttV5PacketDecoder
 
         packet.UserProperties = propertiesReader.CollectedUserProperties;
 
-        packet.ReasonCodes = new List<MqttSubscribeReasonCode>(_bufferReader.BytesLeft);
+        _reusableSubReasonCodes.Clear();
         while (!_bufferReader.EndOfStream)
         {
             var reasonCode = (MqttSubscribeReasonCode)_bufferReader.ReadByte();
-            packet.ReasonCodes.Add(reasonCode);
+            _reusableSubReasonCodes.Add(reasonCode);
         }
+        packet.ReasonCodes = _reusableSubReasonCodes;
 
         return packet;
     }
@@ -616,7 +624,7 @@ public sealed class MqttV5PacketDecoder
             PacketIdentifier = _bufferReader.ReadTwoByteInteger()
         };
 
-        var propertiesReader = new MqttV5PropertiesReader(_bufferReader);
+        var propertiesReader = new MqttV5PropertiesReader(_bufferReader, _reusableUserProperties);
         while (propertiesReader.MoveNext())
         {
             if (propertiesReader.CurrentPropertyId == MqttPropertyId.SubscriptionIdentifier)
@@ -666,7 +674,7 @@ public sealed class MqttV5PacketDecoder
             PacketIdentifier = _bufferReader.ReadTwoByteInteger()
         };
 
-        var propertiesReader = new MqttV5PropertiesReader(_bufferReader);
+        var propertiesReader = new MqttV5PropertiesReader(_bufferReader, _reusableUserProperties);
         while (propertiesReader.MoveNext())
         {
             if (propertiesReader.CurrentPropertyId == MqttPropertyId.ReasonString)
@@ -681,13 +689,13 @@ public sealed class MqttV5PacketDecoder
 
         packet.UserProperties = propertiesReader.CollectedUserProperties;
 
-        packet.ReasonCodes = new List<MqttUnsubscribeReasonCode>(_bufferReader.BytesLeft);
-
+        _reusableUnsubReasonCodes.Clear();
         while (!_bufferReader.EndOfStream)
         {
             var reasonCode = (MqttUnsubscribeReasonCode)_bufferReader.ReadByte();
-            packet.ReasonCodes.Add(reasonCode);
+            _reusableUnsubReasonCodes.Add(reasonCode);
         }
+        packet.ReasonCodes = _reusableUnsubReasonCodes;
 
         return packet;
     }
@@ -703,7 +711,7 @@ public sealed class MqttV5PacketDecoder
             PacketIdentifier = _bufferReader.ReadTwoByteInteger()
         };
 
-        var propertiesReader = new MqttV5PropertiesReader(_bufferReader);
+        var propertiesReader = new MqttV5PropertiesReader(_bufferReader, _reusableUserProperties);
         while (propertiesReader.MoveNext())
         {
             propertiesReader.ThrowInvalidPropertyIdException(typeof(MqttUnsubscribePacket));
