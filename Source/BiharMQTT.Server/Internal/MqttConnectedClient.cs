@@ -236,7 +236,7 @@ public sealed class MqttConnectedClient : IDisposable
 
     Task HandleIncomingPubRecPacket(MqttPubRecPacket pubRecPacket)
     {
-        var pubRelPacket = MqttPubRelPacketFactory.Create(pubRecPacket, MqttApplicationMessageReceivedReasonCode.Success);
+        var pubRelPacket = MqttPubRelPacketFactory.Create(pubRecPacket, MqttPubRelReasonCode.Success);
         var buffer = ChannelAdapter.PacketFormatterAdapter.Encoder.Encode(ref pubRelPacket);
         Session.EnqueueControlPacket(new MqttPacketBusItem(buffer));
 
@@ -245,7 +245,7 @@ public sealed class MqttConnectedClient : IDisposable
 
     void HandleIncomingPubRelPacket(MqttPubRelPacket pubRelPacket)
     {
-        var pubCompPacket = MqttPubCompPacketFactory.Create(pubRelPacket, MqttApplicationMessageReceivedReasonCode.Success);
+        var pubCompPacket = MqttPubCompPacketFactory.Create(pubRelPacket, MqttPubCompReasonCode.Success);
         var buffer = ChannelAdapter.PacketFormatterAdapter.Encoder.Encode(ref pubCompPacket);
         Session.EnqueueControlPacket(new MqttPacketBusItem(buffer));
     }

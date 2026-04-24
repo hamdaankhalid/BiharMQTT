@@ -10,14 +10,18 @@ namespace BiharMQTT.Server.Internal.Formatter;
 
 public static class MqttConnAckPacketFactory
 {
-    public static MqttConnAckPacket Create(ValidatingConnectionEventArgs validatingConnectionEventArgs)
+    public static MqttConnAckPacket Create(
+        MqttConnectReasonCode reasonCode,
+        ArraySegment<byte> authenticationMethod = default,
+        ArraySegment<byte> responseAuthenticationData = default,
+        ArraySegment<byte> assignedClientIdentifier = default,
+        ArraySegment<byte> reasonString = default,
+        ArraySegment<byte> serverReference = default,
+        List<MqttUserProperty> responseUserProperties = null)
     {
-        ArgumentNullException.ThrowIfNull(validatingConnectionEventArgs);
-
         var connAckPacket = new MqttConnAckPacket
         {
-            ReturnCode = MqttConnectReasonCodeConverter.ToConnectReturnCode(validatingConnectionEventArgs.ReasonCode),
-            ReasonCode = validatingConnectionEventArgs.ReasonCode,
+            ReasonCode = reasonCode,
             RetainAvailable = true,
             SubscriptionIdentifiersAvailable = true,
             SharedSubscriptionAvailable = false,
@@ -25,14 +29,14 @@ public static class MqttConnAckPacketFactory
             MaximumQoS = MqttQualityOfServiceLevel.ExactlyOnce,
             WildcardSubscriptionAvailable = true,
 
-            AuthenticationMethod = validatingConnectionEventArgs.AuthenticationMethod,
-            AuthenticationData = validatingConnectionEventArgs.ResponseAuthenticationData,
-            AssignedClientIdentifier = validatingConnectionEventArgs.AssignedClientIdentifier,
-            ReasonString = validatingConnectionEventArgs.ReasonString,
-            ServerReference = validatingConnectionEventArgs.ServerReference,
-            UserProperties = validatingConnectionEventArgs.ResponseUserProperties,
+            AuthenticationMethod = authenticationMethod,
+            AuthenticationData = responseAuthenticationData,
+            AssignedClientIdentifier = assignedClientIdentifier,
+            ReasonString = reasonString,
+            ServerReference = serverReference,
+            UserProperties = responseUserProperties,
 
-            ResponseInformation = null,
+            ResponseInformation = default,
             MaximumPacketSize = 0, // Unlimited,
             ReceiveMaximum = 0 // Unlimited
         };

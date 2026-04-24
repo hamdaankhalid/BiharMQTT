@@ -7,6 +7,7 @@ using BiharMQTT.Internal;
 using BiharMQTT.Packets;
 using BiharMQTT.Protocol;
 using BiharMQTT.Server.Exceptions;
+using BiharMQTT.Server.Internal;
 
 namespace BiharMQTT.Server.Internal;
 

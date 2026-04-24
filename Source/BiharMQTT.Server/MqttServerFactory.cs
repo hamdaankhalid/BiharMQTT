@@ -27,11 +27,6 @@ public sealed class MqttServerFactory
 
     public IDictionary<object, object> Properties { get; } = new Dictionary<object, object>();
 
-    public MqttApplicationMessageBuilder CreateApplicationMessageBuilder()
-    {
-        return new MqttApplicationMessageBuilder();
-    }
-
     public ExchangeEnhancedAuthenticationOptionsFactory CreateExchangeExtendedAuthenticationOptionsBuilder()
     {
         return new ExchangeEnhancedAuthenticationOptionsFactory();

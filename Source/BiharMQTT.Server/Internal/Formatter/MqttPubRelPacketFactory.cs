@@ -9,14 +9,12 @@ namespace BiharMQTT.Server.Internal.Formatter;
 
 public static class MqttPubRelPacketFactory
 {
-    public static MqttPubRelPacket Create(MqttPubRecPacket pubRecPacket, MqttApplicationMessageReceivedReasonCode reasonCode)
+    public static MqttPubRelPacket Create(MqttPubRecPacket pubRecPacket, MqttPubRelReasonCode reasonCode)
     {
-        ArgumentNullException.ThrowIfNull(pubRecPacket);
-
         return new MqttPubRelPacket
         {
             PacketIdentifier = pubRecPacket.PacketIdentifier,
-            ReasonCode = (MqttPubRelReasonCode)(int)reasonCode
+            ReasonCode = reasonCode
         };
     }
 }
