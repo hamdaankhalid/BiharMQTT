@@ -23,6 +23,7 @@ public sealed class MqttSession : IDisposable
     readonly MqttClientSubscriptionsManager _subscriptionsManager;
 
     readonly MqttV5PacketEncoder _encoder = new(new MqttBufferWriter(4096, 65535));
+    readonly object _encoderLock = new();
 
     // Do not use a dictionary in order to keep the ordering of the messages.
     readonly List<MqttPublishPacket> _unacknowledgedPublishPackets = new();
@@ -157,7 +158,20 @@ public sealed class MqttSession : IDisposable
             }
         }
 
-        var buffer = _encoder.Encode(ref publishPacket);
+        MqttPacketBuffer buffer;
+        lock (_encoderLock)
+        {
+            var encoded = _encoder.Encode(ref publishPacket);
+
+            // The Packet segment references the encoder's shared internal buffer
+            // which is overwritten on the next Encode call. Copy the header bytes
+            // so the enqueued packet owns stable memory.
+            var headerCopy = encoded.Packet.AsSpan().ToArray();
+            buffer = encoded.Payload.Length > 0
+                ? new MqttPacketBuffer(new ArraySegment<byte>(headerCopy), encoded.Payload)
+                : new MqttPacketBuffer(new ArraySegment<byte>(headerCopy));
+        }
+
         var busItem = new MqttPacketBusItem(buffer);
         configureBusItem?.Invoke(busItem);
 
