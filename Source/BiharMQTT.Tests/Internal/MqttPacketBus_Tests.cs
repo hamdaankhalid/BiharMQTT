@@ -3,8 +3,8 @@
 // See the LICENSE file in the project root for more information.
 
 using System.Diagnostics.CodeAnalysis;
+using BiharMQTT.Formatter;
 using BiharMQTT.Internal;
-using BiharMQTT.Packets;
 
 namespace BiharMQTT.Tests.Internal;
 
@@ -12,34 +12,41 @@ namespace BiharMQTT.Tests.Internal;
 [TestClass]
 public sealed class MqttPacketBus_Tests
 {
+    static MqttPacketBuffer Buf(byte tag) => new(new ArraySegment<byte>(new[] { tag }));
+
+    const byte TagData = 1;
+    const byte TagControl = 2;
+    const byte TagHealth = 3;
+
     [TestMethod]
     public void Alternate_Priorities()
     {
         var bus = new MqttPacketBus();
 
-        bus.EnqueueItem(new MqttPacketBusItem(new MqttPublishPacket()), MqttPacketBusPartition.Data);
-        bus.EnqueueItem(new MqttPacketBusItem(new MqttPublishPacket()), MqttPacketBusPartition.Data);
-        bus.EnqueueItem(new MqttPacketBusItem(new MqttPublishPacket()), MqttPacketBusPartition.Data);
+        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagData)), MqttPacketBusPartition.Data);
+        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagData)), MqttPacketBusPartition.Data);
+        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagData)), MqttPacketBusPartition.Data);
 
-        bus.EnqueueItem(new MqttPacketBusItem(new MqttSubAckPacket()), MqttPacketBusPartition.Control);
-        bus.EnqueueItem(new MqttPacketBusItem(new MqttSubAckPacket()), MqttPacketBusPartition.Control);
-        bus.EnqueueItem(new MqttPacketBusItem(new MqttSubAckPacket()), MqttPacketBusPartition.Control);
+        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagControl)), MqttPacketBusPartition.Control);
+        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagControl)), MqttPacketBusPartition.Control);
+        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagControl)), MqttPacketBusPartition.Control);
 
-        bus.EnqueueItem(new MqttPacketBusItem(new MqttPingRespPacket()), MqttPacketBusPartition.Health);
-        bus.EnqueueItem(new MqttPacketBusItem(new MqttPingRespPacket()), MqttPacketBusPartition.Health);
-        bus.EnqueueItem(new MqttPacketBusItem(new MqttPingRespPacket()), MqttPacketBusPartition.Health);
+        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagHealth)), MqttPacketBusPartition.Health);
+        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagHealth)), MqttPacketBusPartition.Health);
+        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagHealth)), MqttPacketBusPartition.Health);
 
         Assert.AreEqual(9, bus.TotalItemsCount);
 
-        Assert.IsInstanceOfType<MqttPublishPacket>(bus.DequeueItemAsync(CancellationToken.None).Result.Packet);
-        Assert.IsInstanceOfType<MqttSubAckPacket>(bus.DequeueItemAsync(CancellationToken.None).Result.Packet);
-        Assert.IsInstanceOfType<MqttPingRespPacket>(bus.DequeueItemAsync(CancellationToken.None).Result.Packet);
-        Assert.IsInstanceOfType<MqttPublishPacket>(bus.DequeueItemAsync(CancellationToken.None).Result.Packet);
-        Assert.IsInstanceOfType<MqttSubAckPacket>(bus.DequeueItemAsync(CancellationToken.None).Result.Packet);
-        Assert.IsInstanceOfType<MqttPingRespPacket>(bus.DequeueItemAsync(CancellationToken.None).Result.Packet);
-        Assert.IsInstanceOfType<MqttPublishPacket>(bus.DequeueItemAsync(CancellationToken.None).Result.Packet);
-        Assert.IsInstanceOfType<MqttSubAckPacket>(bus.DequeueItemAsync(CancellationToken.None).Result.Packet);
-        Assert.IsInstanceOfType<MqttPingRespPacket>(bus.DequeueItemAsync(CancellationToken.None).Result.Packet);
+        // Items are dequeued round-robin across partitions.
+        Assert.AreEqual(TagData, bus.DequeueItemAsync(CancellationToken.None).Result.PacketBuffer.Packet[0]);
+        Assert.AreEqual(TagControl, bus.DequeueItemAsync(CancellationToken.None).Result.PacketBuffer.Packet[0]);
+        Assert.AreEqual(TagHealth, bus.DequeueItemAsync(CancellationToken.None).Result.PacketBuffer.Packet[0]);
+        Assert.AreEqual(TagData, bus.DequeueItemAsync(CancellationToken.None).Result.PacketBuffer.Packet[0]);
+        Assert.AreEqual(TagControl, bus.DequeueItemAsync(CancellationToken.None).Result.PacketBuffer.Packet[0]);
+        Assert.AreEqual(TagHealth, bus.DequeueItemAsync(CancellationToken.None).Result.PacketBuffer.Packet[0]);
+        Assert.AreEqual(TagData, bus.DequeueItemAsync(CancellationToken.None).Result.PacketBuffer.Packet[0]);
+        Assert.AreEqual(TagControl, bus.DequeueItemAsync(CancellationToken.None).Result.PacketBuffer.Packet[0]);
+        Assert.AreEqual(TagHealth, bus.DequeueItemAsync(CancellationToken.None).Result.PacketBuffer.Packet[0]);
 
         Assert.AreEqual(0, bus.TotalItemsCount);
     }
@@ -51,10 +58,10 @@ public sealed class MqttPacketBus_Tests
 
         var delivered = false;
 
-        var item1 = new MqttPacketBusItem(new MqttPublishPacket());
-        var item2 = new MqttPacketBusItem(new MqttPublishPacket());
+        var item1 = new MqttPacketBusItem(Buf(TagData));
+        var item2 = new MqttPacketBusItem(Buf(TagData));
 
-        var item3 = new MqttPacketBusItem(new MqttPublishPacket());
+        var item3 = new MqttPacketBusItem(Buf(TagData));
         item3.Completed += (_, _) =>
         {
             delivered = true;
@@ -85,9 +92,9 @@ public sealed class MqttPacketBus_Tests
     {
         var bus = new MqttPacketBus();
 
-        bus.EnqueueItem(new MqttPacketBusItem(new MqttPublishPacket()), MqttPacketBusPartition.Data);
-        bus.EnqueueItem(new MqttPacketBusItem(new MqttPublishPacket()), MqttPacketBusPartition.Data);
-        bus.EnqueueItem(new MqttPacketBusItem(new MqttPublishPacket()), MqttPacketBusPartition.Data);
+        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagData)), MqttPacketBusPartition.Data);
+        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagData)), MqttPacketBusPartition.Data);
+        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagData)), MqttPacketBusPartition.Data);
 
         Assert.AreEqual(3, bus.TotalItemsCount);
 
@@ -117,7 +124,7 @@ public sealed class MqttPacketBus_Tests
             {
                 for (var i = 0; i < messageCount; i++)
                 {
-                    bus.EnqueueItem(new MqttPacketBusItem(MqttPingReqPacket.Instance), MqttPacketBusPartition.Health);
+                    bus.EnqueueItem(new MqttPacketBusItem(Buf(TagHealth)), MqttPacketBusPartition.Health);
 
                     Thread.Sleep(delayRandom.Next(0, 10));
                 }

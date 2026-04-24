@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information.
 
 using System.Collections.Concurrent;
+using System.Text;
 using BiharMQTT.Packets;
 using BiharMQTT.Protocol;
 using BiharMQTT.Server;
@@ -17,6 +18,8 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
 {
     MqttClientSubscriptionsManager _subscriptionsManager;
 
+    static ArraySegment<byte> Seg(string s) => new ArraySegment<byte>(Encoding.UTF8.GetBytes(s));
+
     public void Dispose()
     {
         _subscriptionsManager?.Dispose();
@@ -27,15 +30,17 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
     {
         var sp = new MqttSubscribePacket
         {
-            TopicFilters = [new MqttTopicFilterBuilder().WithTopic("A/B/C").Build()]
+            TopicFilters = [new MqttTopicFilter { Topic = Seg("A/B/C") }]
         };
 
         await _subscriptionsManager.Subscribe(sp, CancellationToken.None);
 
         Assert.IsTrue(CheckSubscriptions("A/B/C", MqttQualityOfServiceLevel.AtMostOnce, "").IsSubscribed);
 
-        var up = new MqttUnsubscribePacket();
-        up.TopicFilters.Add("A/B/C");
+        var up = new MqttUnsubscribePacket
+        {
+            TopicFilters = new List<ArraySegment<byte>> { Seg("A/B/C") }
+        };
         await _subscriptionsManager.Unsubscribe(up, CancellationToken.None);
 
         Assert.IsFalse(CheckSubscriptions("A/B/C", MqttQualityOfServiceLevel.AtMostOnce, "").IsSubscribed);
@@ -48,7 +53,7 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
         {
             TopicFilters =
             [
-                new MqttTopicFilter { Topic = "A/B/C", QualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce }
+                new MqttTopicFilter { Topic = Seg("A/B/C"), QualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce }
             ]
         };
 
@@ -64,7 +69,7 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
     {
         var sp = new MqttSubscribePacket
         {
-            TopicFilters = [new MqttTopicFilterBuilder().WithTopic("A/B/C").Build()]
+            TopicFilters = [new MqttTopicFilter { Topic = Seg("A/B/C") }]
         };
 
         await _subscriptionsManager.Subscribe(sp, CancellationToken.None);
@@ -77,7 +82,7 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
     {
         var sp = new MqttSubscribePacket
         {
-            TopicFilters = [new MqttTopicFilterBuilder().WithTopic("A/B/C").Build()]
+            TopicFilters = [new MqttTopicFilter { Topic = Seg("A/B/C") }]
         };
 
         await _subscriptionsManager.Subscribe(sp, CancellationToken.None);
@@ -95,8 +100,8 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
         {
             TopicFilters =
             [
-                new MqttTopicFilter { Topic = "#", QualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce },
-                new MqttTopicFilter { Topic = "A/B/C", QualityOfServiceLevel = MqttQualityOfServiceLevel.AtLeastOnce }
+                new MqttTopicFilter { Topic = Seg("#"), QualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce },
+                new MqttTopicFilter { Topic = Seg("A/B/C"), QualityOfServiceLevel = MqttQualityOfServiceLevel.AtLeastOnce }
             ]
         };
 
@@ -185,22 +190,20 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
     {
         var logger = new TestLogger();
         var options = new MqttServerOptions();
-        var retainedMessagesManager = new MqttRetainedMessagesManager(new MqttServerEventContainer(), logger);
-        var eventContainer = new MqttServerEventContainer();
-        var clientSessionManager = new MqttClientSessionsManager(options, retainedMessagesManager, eventContainer, logger, new MessageRingBuffer(1024 * 1024, 256));
+        var retainedMessagesManager = new MqttRetainedMessagesManager(logger);
+        var clientSessionManager = new MqttClientSessionsManager(options, retainedMessagesManager, logger, new MessageRingBuffer(1024 * 1024, 256));
 
         var session = new MqttSession(
             new MqttConnectPacket
             {
-                ClientId = ""
+                ClientId = Seg("")
             },
             new ConcurrentDictionary<object, object>(),
             options,
-            eventContainer,
             retainedMessagesManager,
             clientSessionManager);
 
-        _subscriptionsManager = new MqttClientSubscriptionsManager(session, new MqttServerEventContainer(), retainedMessagesManager, clientSessionManager);
+        _subscriptionsManager = new MqttClientSubscriptionsManager(session, retainedMessagesManager, clientSessionManager);
     }
 
     void CheckIsNotSubscribed(string topic)
@@ -228,7 +231,7 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
         {
             TopicFilters =
             [
-                new MqttTopicFilter { Topic = topic, QualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce }
+                new MqttTopicFilter { Topic = Seg(topic), QualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce }
             ]
         };
 

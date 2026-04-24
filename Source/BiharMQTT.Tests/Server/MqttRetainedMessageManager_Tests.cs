@@ -10,8 +10,7 @@ public sealed class MqttRetainedMessageManager_Tests
     public async Task MqttRetainedMessageManager_GetUndefinedTopic()
     {
         var logger = new Mockups.TestLogger();
-        var eventContainer = new MqttServerEventContainer();
-        var retainedMessagesManager = new MqttRetainedMessagesManager(eventContainer, logger);
+        var retainedMessagesManager = new MqttRetainedMessagesManager(logger);
         var task = retainedMessagesManager.GetMessage("undefined");
         Assert.IsNotNull(task, "Task should not be null");
         var result = await task;

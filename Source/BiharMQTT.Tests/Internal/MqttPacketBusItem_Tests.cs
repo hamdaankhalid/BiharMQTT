@@ -2,8 +2,8 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using BiharMQTT.Formatter;
 using BiharMQTT.Internal;
-using BiharMQTT.Packets;
 
 namespace BiharMQTT.Tests.Internal;
 
@@ -11,12 +11,14 @@ namespace BiharMQTT.Tests.Internal;
 [TestClass]
 public sealed class MqttPacketBusItem_Tests
 {
+    static MqttPacketBuffer DummyBuffer() => new(new ArraySegment<byte>(new byte[] { 0 }));
+
     [TestMethod]
     public void Fire_Completed_Event()
     {
         var eventFired = false;
 
-        var item = new MqttPacketBusItem(new MqttPublishPacket());
+        var item = new MqttPacketBusItem(DummyBuffer());
         item.Completed += (_, _) =>
         {
             eventFired = true;
@@ -32,7 +34,7 @@ public sealed class MqttPacketBusItem_Tests
     {
         return Assert.ThrowsExactlyAsync<TaskCanceledException>(async () =>
         {
-            var item = new MqttPacketBusItem(new MqttPublishPacket());
+            var item = new MqttPacketBusItem(DummyBuffer());
 
             // Finish the item before the actual
             item.Cancel();
