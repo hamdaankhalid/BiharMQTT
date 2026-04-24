@@ -34,7 +34,7 @@ public sealed class Events_Tests : BaseTestClass
 
         Assert.StartsWith(nameof(Fire_Client_Connected_Event), eventArgs.ClientId);
         Assert.Contains("127.0.0.1", eventArgs.RemoteEndPoint.ToString()!);
-        Assert.AreEqual(MqttProtocolVersion.V311, eventArgs.ProtocolVersion);
+        Assert.AreEqual(MqttProtocolVersion.V500, eventArgs.ProtocolVersion);
         Assert.AreEqual("TheUser", eventArgs.UserName);
         Assert.AreEqual("ThePassword", eventArgs.Password);
     }

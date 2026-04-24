@@ -15,7 +15,7 @@ public sealed class MqttApplicationMessageValidator_Tests
     public void Succeed_When_Using_TopicAlias_And_MQTT_311()
     {
         Assert.ThrowsExactly<NotSupportedException>(() =>
-            MqttApplicationMessageValidator.ThrowIfNotSupported(new MqttApplicationMessageBuilder().WithTopicAlias(1).Build(), MqttProtocolVersion.V311));
+            MqttApplicationMessageValidator.ThrowIfNotSupported(new MqttApplicationMessageBuilder().WithTopicAlias(1).Build(), MqttProtocolVersion.V500));
     }
 
     [TestMethod]
@@ -37,6 +37,6 @@ public sealed class MqttApplicationMessageValidator_Tests
     {
         Assert.ThrowsExactly<NotSupportedException>(() => MqttApplicationMessageValidator.ThrowIfNotSupported(
             new MqttApplicationMessageBuilder().WithTopic("B").WithUserProperty("User", Encoding.UTF8.GetBytes("Property")).Build(),
-            MqttProtocolVersion.V311));
+            MqttProtocolVersion.V500));
     }
 }

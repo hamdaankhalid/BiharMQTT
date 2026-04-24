@@ -12,7 +12,7 @@ public abstract class BaseTestClass
     public TestContext TestContext { get; set; }
 
     protected TestEnvironment CreateTestEnvironment(
-        MqttProtocolVersion protocolVersion = MqttProtocolVersion.V311, bool trackUnobservedTaskException = true)
+        MqttProtocolVersion protocolVersion = MqttProtocolVersion.V500, bool trackUnobservedTaskException = true)
     {
         return new TestEnvironment(TestContext, protocolVersion, trackUnobservedTaskException);
     }

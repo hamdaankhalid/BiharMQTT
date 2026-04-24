@@ -2,7 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-using BiharMQTT.Packets;
+using BiharMQTT.Formatter;
 
 namespace BiharMQTT.Internal;
 
@@ -99,7 +99,7 @@ public sealed class MqttPacketBus : IDisposable
         _signal.Dispose();
     }
 
-    public MqttPacketBusItem DropFirstItem(MqttPacketBusPartition partition)
+    public MqttPacketBusItem? DropFirstItem(MqttPacketBusPartition partition)
     {
         lock (_syncRoot)
         {
@@ -128,11 +128,11 @@ public sealed class MqttPacketBus : IDisposable
         }
     }
 
-    public List<MqttPacket> ExportPackets(MqttPacketBusPartition partition)
+    public List<MqttPacketBuffer> ExportPackets(MqttPacketBusPartition partition)
     {
         lock (_syncRoot)
         {
-            return _partitions[(int)partition].Select(i => i.Packet).ToList();
+            return _partitions[(int)partition].Select(i => i.PacketBuffer).ToList();
         }
     }
 

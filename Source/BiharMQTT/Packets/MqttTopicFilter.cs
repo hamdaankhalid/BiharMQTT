@@ -6,7 +6,7 @@ using BiharMQTT.Protocol;
 
 namespace BiharMQTT.Packets;
 
-public sealed class MqttTopicFilter
+public struct MqttTopicFilter
 {
     /// <summary>
     ///     Gets or sets a value indicating whether the sender will not receive its own published application messages.
@@ -35,7 +35,7 @@ public sealed class MqttTopicFilter
     ///     Gets or sets the retain handling.
     ///     <remarks>MQTT 5.0.0+ feature.</remarks>
     /// </summary>
-    public MqttRetainHandling RetainHandling { get; set; } = MqttRetainHandling.SendAtSubscribe;
+    public MqttRetainHandling RetainHandling { get; set; }
 
     /// <summary>
     ///     Gets or sets the MQTT topic.
@@ -46,7 +46,7 @@ public sealed class MqttTopicFilter
     /// </summary>
     public string Topic { get; set; }
 
-    public override string ToString()
+    public override readonly string ToString()
     {
         return
             $"TopicFilter: [Topic={Topic}] [QualityOfServiceLevel={QualityOfServiceLevel}] [NoLocal={NoLocal}] [RetainAsPublished={RetainAsPublished}] [RetainHandling={RetainHandling}]";

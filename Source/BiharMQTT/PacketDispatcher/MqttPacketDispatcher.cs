@@ -2,7 +2,8 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-using BiharMQTT.Packets;
+using BiharMQTT.Adapter;
+using BiharMQTT.Protocol;
 
 namespace BiharMQTT.PacketDispatcher;
 
@@ -12,9 +13,9 @@ public sealed class MqttPacketDispatcher : IDisposable
 
     bool _isDisposed;
 
-    public MqttPacketAwaitable<TResponsePacket> AddAwaitable<TResponsePacket>(ushort packetIdentifier) where TResponsePacket : MqttPacket
+    public MqttPacketAwaitable AddAwaitable(MqttControlPacketType packetType, ushort packetIdentifier = 0)
     {
-        var awaitable = new MqttPacketAwaitable<TResponsePacket>(packetIdentifier, this);
+        var awaitable = new MqttPacketAwaitable(packetType, packetIdentifier, this);
 
         lock (_waiters)
         {
@@ -81,17 +82,12 @@ public sealed class MqttPacketDispatcher : IDisposable
         }
     }
 
-    public bool TryDispatch(MqttPacket packet)
+    /// <summary>
+    ///     Dispatches a received packet to any matching waiters based on packet type and identifier.
+    ///     The packet type is extracted from the upper 4 bits of the fixed header byte.
+    /// </summary>
+    public bool TryDispatch(MqttControlPacketType packetType, ushort packetIdentifier, ReceivedMqttPacket packet)
     {
-        ArgumentNullException.ThrowIfNull(packet);
-
-        ushort identifier = 0;
-        if (packet is MqttPacketWithIdentifier packetWithIdentifier)
-        {
-            identifier = packetWithIdentifier.PacketIdentifier;
-        }
-
-        var packetType = packet.GetType();
         var waiters = new List<IMqttPacketAwaitable>();
 
         lock (_waiters)
@@ -105,7 +101,7 @@ public sealed class MqttPacketDispatcher : IDisposable
                 // Note: The PingRespPacket will also arrive here and has NO identifier but there
                 // is code which waits for it. So the code must be able to deal with filters which
                 // are referring to the type only (identifier is 0)!
-                if (entry.Filter.Type != packetType || entry.Filter.Identifier != identifier)
+                if (entry.Filter.PacketType != packetType || entry.Filter.Identifier != packetIdentifier)
                 {
                     continue;
                 }

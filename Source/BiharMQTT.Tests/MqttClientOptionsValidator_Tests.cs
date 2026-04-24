@@ -21,7 +21,7 @@ public sealed class MqttClientOptionsValidator_Tests
     public void Succeed_When_Using_WillUserProperties_And_MQTT_311()
     {
         Assert.ThrowsExactly<NotSupportedException>(() =>
-            new MqttClientOptionsBuilder().WithProtocolVersion(MqttProtocolVersion.V311).WithWillUserProperty("User", Encoding.UTF8.GetBytes("Property")).WithTcpServer("FAKE").Build());
+            new MqttClientOptionsBuilder().WithProtocolVersion(MqttProtocolVersion.V500).WithWillUserProperty("User", Encoding.UTF8.GetBytes("Property")).WithTcpServer("FAKE").Build());
     }
 
     [TestMethod]
@@ -34,14 +34,14 @@ public sealed class MqttClientOptionsValidator_Tests
     public void Throw_When_Using_UserProperties_And_MQTT_311()
     {
         Assert.ThrowsExactly<NotSupportedException>(() =>
-            new MqttClientOptionsBuilder().WithProtocolVersion(MqttProtocolVersion.V311).WithUserProperty("User", Encoding.UTF8.GetBytes("Property")).WithTcpServer("FAKE").Build());
+            new MqttClientOptionsBuilder().WithProtocolVersion(MqttProtocolVersion.V500).WithUserProperty("User", Encoding.UTF8.GetBytes("Property")).WithTcpServer("FAKE").Build());
     }
 
     [TestMethod]
     public void Throw_When_Using_WithRequestResponseInformation_And_MQTT_311()
     {
         Assert.ThrowsExactly<NotSupportedException>(() =>
-            new MqttClientOptionsBuilder().WithProtocolVersion(MqttProtocolVersion.V311).WithRequestResponseInformation().WithTcpServer("FAKE").Build());
+            new MqttClientOptionsBuilder().WithProtocolVersion(MqttProtocolVersion.V500).WithRequestResponseInformation().WithTcpServer("FAKE").Build());
     }
 
     [TestMethod]

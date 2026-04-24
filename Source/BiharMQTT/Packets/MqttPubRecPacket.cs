@@ -6,12 +6,14 @@ using BiharMQTT.Protocol;
 
 namespace BiharMQTT.Packets;
 
-public sealed class MqttPubRecPacket : MqttPacketWithIdentifier
+public struct MqttPubRecPacket
 {
+    public ushort PacketIdentifier { get; set; }
+
     /// <summary>
     ///     Added in MQTTv5.
     /// </summary>
-    public MqttPubRecReasonCode ReasonCode { get; set; } = MqttPubRecReasonCode.Success;
+    public MqttPubRecReasonCode ReasonCode { get; set; }
 
     /// <summary>
     ///     Added in MQTTv5.
@@ -23,7 +25,7 @@ public sealed class MqttPubRecPacket : MqttPacketWithIdentifier
     /// </summary>
     public List<MqttUserProperty> UserProperties { get; set; }
 
-    public override string ToString()
+    public override readonly string ToString()
     {
         return $"PubRec: [PacketIdentifier={PacketIdentifier}] [ReasonCode={ReasonCode}]";
     }

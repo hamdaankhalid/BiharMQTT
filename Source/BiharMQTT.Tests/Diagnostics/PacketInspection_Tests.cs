@@ -20,7 +20,7 @@ public sealed class PacketInspection_Tests : BaseTestClass
         using var mqttClient = testEnvironment.CreateClient();
         var mqttClientOptions = testEnvironment.ClientFactory.CreateClientOptionsBuilder()
             .WithClientId("CLIENT_ID") // Must be fixed.
-            .WithProtocolVersion(MqttProtocolVersion.V311)
+            .WithProtocolVersion(MqttProtocolVersion.V500)
             .WithTcpServer("127.0.0.1", testEnvironment.ServerPort)
             .Build();
 

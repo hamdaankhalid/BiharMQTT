@@ -6,12 +6,12 @@ using BiharMQTT.Tests.Mockups;
 
 namespace BiharMQTT.Tests;
 
-public sealed class MqttPacketSerializationHelper : IDisposable
+public sealed class MqttPacketSerializationHelper
 {
     readonly IMqttPacketFormatter _packetFormatter;
     readonly MqttProtocolVersion _protocolVersion;
 
-    public MqttPacketSerializationHelper(MqttProtocolVersion protocolVersion = MqttProtocolVersion.V311, MqttBufferWriter bufferWriter = null)
+    public MqttPacketSerializationHelper(MqttProtocolVersion protocolVersion = MqttProtocolVersion.V500, MqttBufferWriter bufferWriter = null)
     {
         _protocolVersion = protocolVersion;
 
@@ -25,38 +25,11 @@ public sealed class MqttPacketSerializationHelper : IDisposable
 
     public MqttPacket Decode(MqttPacketBuffer buffer)
     {
+        // HK TODO: TF is this ToArray crap?
         using var channel = new MemoryMqttChannel(buffer.ToArray());
         var formatterAdapter = new MqttPacketFormatterAdapter(_protocolVersion, new MqttBufferWriter(4096, 65535));
 
         var adapter = new MqttChannelAdapter(channel, formatterAdapter, MqttNetNullLogger.Instance);
         return adapter.ReceivePacketAsync(CancellationToken.None).GetAwaiter().GetResult();
-    }
-
-    public static MqttPacket DecodePacket(byte[] buffer, MqttProtocolVersion protocolVersion)
-    {
-        using var helper = new MqttPacketSerializationHelper(protocolVersion);
-        return helper.Decode(new MqttPacketBuffer(buffer));
-    }
-
-    public void Dispose()
-    {
-    }
-
-    public MqttPacketBuffer Encode(MqttPacket packet)
-    {
-        return _packetFormatter.Encode(packet);
-    }
-
-    public static TPacket EncodeAndDecodePacket<TPacket>(TPacket packet, MqttProtocolVersion protocolVersion) where TPacket : MqttPacket
-    {
-        using var helper = new MqttPacketSerializationHelper(protocolVersion);
-        var buffer = helper.Encode(packet);
-        return (TPacket)helper.Decode(buffer);
-    }
-
-    public static byte[] EncodePacket(MqttPacket packet, MqttProtocolVersion protocolVersion)
-    {
-        using var helper = new MqttPacketSerializationHelper(protocolVersion);
-        return helper.Encode(packet).ToArray();
     }
 }

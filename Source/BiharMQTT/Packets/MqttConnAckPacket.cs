@@ -6,7 +6,7 @@ using BiharMQTT.Protocol;
 
 namespace BiharMQTT.Packets;
 
-public sealed class MqttConnAckPacket : MqttPacket
+public struct MqttConnAckPacket
 {
     /// <summary>
     ///     Added in MQTTv5.

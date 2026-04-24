@@ -11,7 +11,6 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
 {
     static readonly List<uint> EmptySubscriptionIdentifiers = new List<uint>();
 
-    readonly MqttServerEventContainer _eventContainer;
     readonly Dictionary<ulong, HashSet<MqttSubscription>> _noWildcardSubscriptionsByTopicHash = new Dictionary<ulong, HashSet<MqttSubscription>>();
     readonly MqttRetainedMessagesManager _retainedMessagesManager;
 
@@ -30,12 +29,10 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
 
     public MqttClientSubscriptionsManager(
         MqttSession session,
-        MqttServerEventContainer eventContainer,
         MqttRetainedMessagesManager retainedMessagesManager,
         ISubscriptionChangedNotification subscriptionChangedNotification)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
-        _eventContainer = eventContainer ?? throw new ArgumentNullException(nameof(eventContainer));
         _retainedMessagesManager = retainedMessagesManager ?? throw new ArgumentNullException(nameof(retainedMessagesManager));
         _subscriptionChangedNotification = subscriptionChangedNotification;
     }
@@ -173,7 +170,7 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
         // lower one.
         foreach (var topicFilterItem in subscribePacket.TopicFilters.OrderByDescending(f => f.QualityOfServiceLevel))
         {
-            var interceptorEventArgs = await InterceptSubscribe(topicFilterItem, subscribePacket.UserProperties, cancellationToken).ConfigureAwait(false);
+            var interceptorEventArgs = InterceptSubscribe(topicFilterItem, subscribePacket.UserProperties, cancellationToken);
             var topicFilter = interceptorEventArgs.TopicFilter;
             var processSubscription = interceptorEventArgs.ProcessSubscription && interceptorEventArgs.Response.ReasonCode <= MqttSubscribeReasonCode.GrantedQoS2;
 
@@ -205,15 +202,6 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
         // So the event _ClientSubscribedTopicEvent_ must be called afterwards.
         _subscriptionChangedNotification?.OnSubscriptionsAdded(_session, addedSubscriptions);
 
-        if (_eventContainer.ClientSubscribedTopicEvent.HasHandlers)
-        {
-            foreach (var finalTopicFilter in finalTopicFilters)
-            {
-                var eventArgs = new ClientSubscribedTopicEventArgs(_session.Id, _session.UserName, finalTopicFilter, _session.Items);
-                await _eventContainer.ClientSubscribedTopicEvent.InvokeAsync(eventArgs).ConfigureAwait(false);
-            }
-        }
-
         return result;
     }
 
@@ -232,7 +220,7 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
             {
                 _subscriptions.TryGetValue(topicFilter, out var existingSubscription);
 
-                var interceptorEventArgs = await InterceptUnsubscribe(topicFilter, existingSubscription, unsubscribePacket.UserProperties, cancellationToken).ConfigureAwait(false);
+                var interceptorEventArgs = InterceptUnsubscribe(topicFilter, existingSubscription, unsubscribePacket.UserProperties, cancellationToken);
                 var acceptUnsubscription = interceptorEventArgs.Response.ReasonCode == MqttUnsubscribeReasonCode.Success;
 
                 result.UserProperties = interceptorEventArgs.UserProperties;
@@ -291,15 +279,6 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
         {
             _subscriptionsLock.ExitWriteLock();
             _subscriptionChangedNotification?.OnSubscriptionsRemoved(_session, removedSubscriptions);
-        }
-
-        if (_eventContainer.ClientUnsubscribedTopicEvent.HasHandlers)
-        {
-            foreach (var topicFilter in unsubscribePacket.TopicFilters)
-            {
-                var eventArgs = new ClientUnsubscribedTopicEventArgs(_session.Id, _session.UserName, topicFilter, _session.Items);
-                await _eventContainer.ClientUnsubscribedTopicEvent.InvokeAsync(eventArgs).ConfigureAwait(false);
-            }
         }
 
         return result;
@@ -455,7 +434,7 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
         }
     }
 
-    async Task<InterceptingSubscriptionEventArgs> InterceptSubscribe(
+    InterceptingSubscriptionEventArgs InterceptSubscribe(
         MqttTopicFilter topicFilter,
         List<MqttUserProperty> userProperties,
         CancellationToken cancellationToken)
@@ -479,29 +458,23 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
         {
             eventArgs.Response.ReasonCode = MqttSubscribeReasonCode.SharedSubscriptionsNotSupported;
         }
-        else
-        {
-            await _eventContainer.InterceptingSubscriptionEvent.InvokeAsync(eventArgs).ConfigureAwait(false);
-        }
 
         return eventArgs;
     }
 
-    async Task<InterceptingUnsubscriptionEventArgs> InterceptUnsubscribe(
+    InterceptingUnsubscriptionEventArgs InterceptUnsubscribe(
         string topicFilter,
         MqttSubscription mqttSubscription,
         List<MqttUserProperty> userProperties,
         CancellationToken cancellationToken)
     {
-        var clientUnsubscribingTopicEventArgs = new InterceptingUnsubscriptionEventArgs(_session.Id, _session.UserName, _session.Items, topicFilter, userProperties, cancellationToken)
+        InterceptingUnsubscriptionEventArgs clientUnsubscribingTopicEventArgs = new InterceptingUnsubscriptionEventArgs(_session.Id, _session.UserName, _session.Items, topicFilter, userProperties, cancellationToken)
         {
             Response =
             {
                 ReasonCode = mqttSubscription == null ? MqttUnsubscribeReasonCode.NoSubscriptionExisted : MqttUnsubscribeReasonCode.Success
             }
         };
-
-        await _eventContainer.InterceptingUnsubscriptionEvent.InvokeAsync(clientUnsubscribingTopicEventArgs).ConfigureAwait(false);
 
         return clientUnsubscribingTopicEventArgs;
     }

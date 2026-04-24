@@ -9,15 +9,12 @@ namespace BiharMQTT.Server.Internal;
 
 public sealed class MqttRetainedMessagesManager : IDisposable
 {
-    readonly MqttServerEventContainer _eventContainer;
     readonly MqttNetSourceLogger _logger;
     readonly Dictionary<string, MqttApplicationMessage> _messages = new(4096);
     readonly AsyncLock _storageAccessLock = new();
 
-    public MqttRetainedMessagesManager(MqttServerEventContainer eventContainer, IMqttNetLogger logger)
+    public MqttRetainedMessagesManager(IMqttNetLogger logger)
     {
-        _eventContainer = eventContainer ?? throw new ArgumentNullException(nameof(eventContainer));
-
         ArgumentNullException.ThrowIfNull(logger);
 
         _logger = logger.WithSource(nameof(MqttRetainedMessagesManager));

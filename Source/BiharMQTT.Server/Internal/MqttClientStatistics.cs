@@ -2,7 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-using BiharMQTT.Packets;
+using BiharMQTT.Protocol;
 
 namespace BiharMQTT.Server.Internal;
 
@@ -48,40 +48,31 @@ public sealed class MqttClientStatistics
 
     public long ReceivedPacketsCount => Volatile.Read(ref _statistics._receivedPacketsCount);
 
-    public void HandleReceivedPacket(MqttPacket packet)
+    public void HandleReceivedPacket(MqttControlPacketType packetType)
     {
-        ArgumentNullException.ThrowIfNull(packet);
-
         // This class is tracking all values from Clients perspective!
         LastPacketSentTimestamp = DateTime.UtcNow;
 
         Interlocked.Increment(ref _statistics._sentPacketsCount);
 
-        if (packet is MqttPublishPacket)
+        if (packetType == MqttControlPacketType.Publish)
         {
             Interlocked.Increment(ref _statistics._sentApplicationMessagesCount);
         }
 
-        if (!(packet is MqttPingReqPacket || packet is MqttPingRespPacket))
+        if (packetType != MqttControlPacketType.PingReq && packetType != MqttControlPacketType.PingResp)
         {
             LastNonKeepAlivePacketReceivedTimestamp = LastPacketReceivedTimestamp;
         }
     }
     public void ResetStatistics() => _statistics.Reset();
 
-    public void HandleSentPacket(MqttPacket packet)
+    public void HandleSentPacket()
     {
-        ArgumentNullException.ThrowIfNull(packet);
-
         // This class is tracking all values from Clients perspective!
         LastPacketReceivedTimestamp = DateTime.UtcNow;
 
         Interlocked.Increment(ref _statistics._receivedPacketsCount);
-
-        if (packet is MqttPublishPacket)
-        {
-            Interlocked.Increment(ref _statistics._receivedApplicationMessagesCount);
-        }
     }
 
     struct Statistics

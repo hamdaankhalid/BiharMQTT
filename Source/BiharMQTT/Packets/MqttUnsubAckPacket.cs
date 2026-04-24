@@ -6,8 +6,10 @@ using BiharMQTT.Protocol;
 
 namespace BiharMQTT.Packets;
 
-public sealed class MqttUnsubAckPacket : MqttPacketWithIdentifier
+public struct MqttUnsubAckPacket
 {
+    public ushort PacketIdentifier { get; set; }
+
     /// <summary>
     ///     Added in MQTTv5.
     /// </summary>
@@ -23,7 +25,7 @@ public sealed class MqttUnsubAckPacket : MqttPacketWithIdentifier
     /// </summary>
     public List<MqttUserProperty> UserProperties { get; set; }
 
-    public override string ToString()
+    public override readonly string ToString()
     {
         var reasonCodesText = string.Empty;
         if (ReasonCodes != null)

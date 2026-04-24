@@ -18,7 +18,7 @@ public sealed class Wildcard_Subscription_Available_Tests : BaseTestClass
 
         var client = testEnvironment.CreateClient();
         var connectResult = await client.ConnectAsync(testEnvironment.ClientFactory.CreateClientOptionsBuilder()
-            .WithProtocolVersion(MqttProtocolVersion.V311)
+            .WithProtocolVersion(MqttProtocolVersion.V500)
             .WithTcpServer("127.0.0.1", testEnvironment.ServerPort).Build());
 
         Assert.IsTrue(connectResult.WildcardSubscriptionAvailable);

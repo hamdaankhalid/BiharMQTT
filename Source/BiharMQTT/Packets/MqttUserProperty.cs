@@ -6,7 +6,7 @@ using System.Text;
 
 namespace BiharMQTT.Packets;
 
-public sealed class MqttUserProperty
+public struct MqttUserProperty
 {
     readonly ReadOnlyMemory<byte> _valueBuffer;
 
@@ -32,25 +32,20 @@ public sealed class MqttUserProperty
     public ReadOnlyMemory<byte> ValueBuffer => _valueBuffer;
 
     [Obsolete("Please use more performance property ValueBuffer or the MqttUserPropertyExtensionMethod `ReadValueAsString`")]
-    public string Value => this.ReadValueAsString();
+    public readonly string Value => this.ReadValueAsString();
 
-    public override bool Equals(object obj)
+    public override readonly bool Equals(object obj)
     {
-        return Equals(obj as MqttUserProperty);
+        if (obj is MqttUserProperty other)
+        {
+            return Equals(other);
+        }
+
+        return false;
     }
 
-    public bool Equals(MqttUserProperty other)
+    public readonly bool Equals(MqttUserProperty other)
     {
-        if (other == null)
-        {
-            return false;
-        }
-
-        if (ReferenceEquals(other, this))
-        {
-            return true;
-        }
-
         if (!string.Equals(Name, other.Name, StringComparison.Ordinal))
         {
             return false;
@@ -60,7 +55,7 @@ public sealed class MqttUserProperty
     }
 
 
-    public override int GetHashCode()
+    public override readonly int GetHashCode()
     {
         var hashCode = new HashCode();
 
@@ -79,7 +74,7 @@ public sealed class MqttUserProperty
     }
 
 
-    public override string ToString()
+    public override readonly string ToString()
     {
         return $"{Name} = {this.ReadValueAsString()}";
     }

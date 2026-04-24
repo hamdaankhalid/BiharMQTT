@@ -4,12 +4,9 @@
 
 namespace BiharMQTT.Packets;
 
-public sealed class MqttPingRespPacket : MqttPacket
+public struct MqttPingRespPacket
 {
-    // This is a minor performance improvement.
-    public static readonly MqttPingRespPacket Instance = new();
-
-    public override string ToString()
+    public override readonly string ToString()
     {
         return "PingResp";
     }

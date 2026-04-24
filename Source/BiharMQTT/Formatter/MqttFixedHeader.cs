@@ -4,11 +4,22 @@
 
 namespace BiharMQTT.Formatter;
 
-public struct MqttFixedHeader(byte flags, int remainingLength, int totalLength)
+public readonly struct MqttFixedHeader
 {
-    public byte Flags { get; } = flags;
+    public byte Flags { get; }
 
-    public int RemainingLength { get; } = remainingLength;
+    public ushort RemainingLength { get; }
 
-    public int TotalLength { get; } = totalLength;
+    public ushort TotalLength { get; }
+
+    // For all intents and purposes of MQTT packets being sent WHO TF is sending packets larger than 64KB? 
+    // If that ever becomes a thing, we can always change this to an int and update the code accordingly.
+    // Like fuck off don't make this shit up.
+    public MqttFixedHeader(byte flags, ushort remainingLength, ushort totalLength)
+    {
+        Flags = flags;
+        RemainingLength = remainingLength;
+        TotalLength = totalLength;
+    }
+
 }

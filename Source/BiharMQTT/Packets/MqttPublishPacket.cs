@@ -7,8 +7,10 @@ using BiharMQTT.Protocol;
 
 namespace BiharMQTT.Packets;
 
-public sealed class MqttPublishPacket : MqttPacketWithIdentifier
+public struct MqttPublishPacket
 {
+    public ushort PacketIdentifier { get; set; }
+
     public string ContentType { get; set; }
 
     public byte[] CorrelationData { get; set; }
@@ -17,13 +19,13 @@ public sealed class MqttPublishPacket : MqttPacketWithIdentifier
 
     public uint MessageExpiryInterval { get; set; }
 
-    public MqttPayloadFormatIndicator PayloadFormatIndicator { get; set; } = MqttPayloadFormatIndicator.Unspecified;
+    public MqttPayloadFormatIndicator PayloadFormatIndicator { get; set; }
 
     public ArraySegment<byte> PayloadSegment { set => Payload = new ReadOnlySequence<byte>(value); }
 
     public ReadOnlySequence<byte> Payload { get; set; }
 
-    public MqttQualityOfServiceLevel QualityOfServiceLevel { get; set; } = MqttQualityOfServiceLevel.AtMostOnce;
+    public MqttQualityOfServiceLevel QualityOfServiceLevel { get; set; }
 
     public string ResponseTopic { get; set; }
 
@@ -37,9 +39,5 @@ public sealed class MqttPublishPacket : MqttPacketWithIdentifier
 
     public List<MqttUserProperty> UserProperties { get; set; }
 
-    public override string ToString()
-    {
-        return
-            $"Publish: [Topic={Topic}] [PayloadLength={Payload.Length}] [QoSLevel={QualityOfServiceLevel}] [Dup={Dup}] [Retain={Retain}] [PacketIdentifier={PacketIdentifier}]";
-    }
+    public override readonly string ToString() => $"Publish: [Topic={Topic}] [PayloadLength={Payload.Length}] [QoSLevel={QualityOfServiceLevel}] [Dup={Dup}] [Retain={Retain}] [PacketIdentifier={PacketIdentifier}]";
 }

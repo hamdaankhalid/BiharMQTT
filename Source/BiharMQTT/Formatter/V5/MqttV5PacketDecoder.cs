@@ -2,7 +2,6 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-using BiharMQTT.Adapter;
 using BiharMQTT.Exceptions;
 using BiharMQTT.Packets;
 using BiharMQTT.Protocol;
@@ -15,41 +14,7 @@ public sealed class MqttV5PacketDecoder
 
     readonly MqttBufferReader _bufferReader = new();
 
-    public MqttPacket Decode(ReceivedMqttPacket receivedMqttPacket)
-    {
-        if (receivedMqttPacket.TotalLength == 0)
-        {
-            return null;
-        }
-
-        var controlPacketType = receivedMqttPacket.FixedHeader >> 4;
-        if (controlPacketType < 1)
-        {
-            throw new MqttProtocolViolationException($"The packet type is invalid ({controlPacketType}).");
-        }
-
-        return (MqttControlPacketType)controlPacketType switch
-        {
-            MqttControlPacketType.Connect => DecodeConnectPacket(receivedMqttPacket.Body),
-            MqttControlPacketType.ConnAck => DecodeConnAckPacket(receivedMqttPacket.Body),
-            MqttControlPacketType.Disconnect => DecodeDisconnectPacket(receivedMqttPacket.Body),
-            MqttControlPacketType.Publish => DecodePublishPacket(receivedMqttPacket.FixedHeader, receivedMqttPacket.Body),
-            MqttControlPacketType.PubAck => DecodePubAckPacket(receivedMqttPacket.Body),
-            MqttControlPacketType.PubRec => DecodePubRecPacket(receivedMqttPacket.Body),
-            MqttControlPacketType.PubRel => DecodePubRelPacket(receivedMqttPacket.Body),
-            MqttControlPacketType.PubComp => DecodePubCompPacket(receivedMqttPacket.Body),
-            MqttControlPacketType.PingReq => MqttPingReqPacket.Instance,
-            MqttControlPacketType.PingResp => MqttPingRespPacket.Instance,
-            MqttControlPacketType.Subscribe => DecodeSubscribePacket(receivedMqttPacket.Body),
-            MqttControlPacketType.SubAck => DecodeSubAckPacket(receivedMqttPacket.Body),
-            MqttControlPacketType.Unsubscribe => DecodeUnsubscribePacket(receivedMqttPacket.Body),
-            MqttControlPacketType.UnsubAck => DecodeUnsubAckPacket(receivedMqttPacket.Body),
-            MqttControlPacketType.Auth => DecodeAuthPacket(receivedMqttPacket.Body),
-            _ => throw new MqttProtocolViolationException($"Packet type ({controlPacketType}) not supported.")
-        };
-    }
-
-    MqttAuthPacket DecodeAuthPacket(ArraySegment<byte> body)
+    public MqttAuthPacket DecodeAuthPacket(ArraySegment<byte> body)
     {
         _bufferReader.SetBuffer(body.Array, body.Offset, body.Count);
 
@@ -91,7 +56,7 @@ public sealed class MqttV5PacketDecoder
         return packet;
     }
 
-    MqttConnAckPacket DecodeConnAckPacket(ArraySegment<byte> body)
+    public MqttConnAckPacket DecodeConnAckPacket(ArraySegment<byte> body)
     {
         ThrowIfBodyIsEmpty(body);
 
@@ -194,7 +159,7 @@ public sealed class MqttV5PacketDecoder
         return packet;
     }
 
-    MqttConnectPacket DecodeConnectPacket(ArraySegment<byte> body)
+    public MqttConnectPacket DecodeConnectPacket(ArraySegment<byte> body)
     {
         ThrowIfBodyIsEmpty(body);
 
@@ -337,7 +302,7 @@ public sealed class MqttV5PacketDecoder
         return packet;
     }
 
-    MqttDisconnectPacket DecodeDisconnectPacket(ArraySegment<byte> body)
+    public MqttDisconnectPacket DecodeDisconnectPacket(ArraySegment<byte> body)
     {
         // From RFC: 3.14.2.1 Disconnect Reason Code
         // Byte 1 in the Variable Header is the Disconnect Reason Code.
@@ -383,7 +348,7 @@ public sealed class MqttV5PacketDecoder
         return packet;
     }
 
-    MqttPubAckPacket DecodePubAckPacket(ArraySegment<byte> body)
+    public MqttPubAckPacket DecodePubAckPacket(ArraySegment<byte> body)
     {
         ThrowIfBodyIsEmpty(body);
 
@@ -420,7 +385,7 @@ public sealed class MqttV5PacketDecoder
         return packet;
     }
 
-    MqttPubCompPacket DecodePubCompPacket(ArraySegment<byte> body)
+    public MqttPubCompPacket DecodePubCompPacket(ArraySegment<byte> body)
     {
         ThrowIfBodyIsEmpty(body);
 
@@ -458,7 +423,7 @@ public sealed class MqttV5PacketDecoder
     }
 
 
-    MqttPublishPacket DecodePublishPacket(byte header, ArraySegment<byte> body)
+    public MqttPublishPacket DecodePublishPacket(byte header, ArraySegment<byte> body)
     {
         ThrowIfBodyIsEmpty(body);
 
@@ -535,7 +500,7 @@ public sealed class MqttV5PacketDecoder
         return packet;
     }
 
-    MqttPubRecPacket DecodePubRecPacket(ArraySegment<byte> body)
+    public MqttPubRecPacket DecodePubRecPacket(ArraySegment<byte> body)
     {
         ThrowIfBodyIsEmpty(body);
 
@@ -572,7 +537,7 @@ public sealed class MqttV5PacketDecoder
         return packet;
     }
 
-    MqttPubRelPacket DecodePubRelPacket(ArraySegment<byte> body)
+    public MqttPubRelPacket DecodePubRelPacket(ArraySegment<byte> body)
     {
         ThrowIfBodyIsEmpty(body);
 
@@ -609,7 +574,7 @@ public sealed class MqttV5PacketDecoder
         return packet;
     }
 
-    MqttSubAckPacket DecodeSubAckPacket(ArraySegment<byte> body)
+    public MqttSubAckPacket DecodeSubAckPacket(ArraySegment<byte> body)
     {
         ThrowIfBodyIsEmpty(body);
 
@@ -645,7 +610,7 @@ public sealed class MqttV5PacketDecoder
         return packet;
     }
 
-    MqttSubscribePacket DecodeSubscribePacket(ArraySegment<byte> body)
+    public MqttSubscribePacket DecodeSubscribePacket(ArraySegment<byte> body)
     {
         ThrowIfBodyIsEmpty(body);
 
@@ -695,7 +660,7 @@ public sealed class MqttV5PacketDecoder
         return packet;
     }
 
-    MqttUnsubAckPacket DecodeUnsubAckPacket(ArraySegment<byte> body)
+    public MqttUnsubAckPacket DecodeUnsubAckPacket(ArraySegment<byte> body)
     {
         ThrowIfBodyIsEmpty(body);
 
@@ -732,7 +697,7 @@ public sealed class MqttV5PacketDecoder
         return packet;
     }
 
-    MqttUnsubscribePacket DecodeUnsubscribePacket(ArraySegment<byte> body)
+    public MqttUnsubscribePacket DecodeUnsubscribePacket(ArraySegment<byte> body)
     {
         ThrowIfBodyIsEmpty(body);
 

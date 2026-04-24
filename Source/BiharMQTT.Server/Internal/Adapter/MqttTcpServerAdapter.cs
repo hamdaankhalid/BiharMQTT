@@ -10,7 +10,7 @@ using BiharMQTT.Internal;
 
 namespace BiharMQTT.Server.Internal.Adapter;
 
-public sealed class MqttTcpServerAdapter : IMqttServerAdapter
+public sealed class MqttTcpServerAdapter : IDisposable
 {
     readonly List<MqttTcpServerListener> _listeners = new List<MqttTcpServerListener>();
 
@@ -18,7 +18,7 @@ public sealed class MqttTcpServerAdapter : IMqttServerAdapter
 
     MqttServerOptions _serverOptions;
 
-    public Func<IMqttChannelAdapter, Task> ClientHandler { get; set; }
+    public Func<MqttChannelAdapter, Task> ClientHandler { get; set; }
 
     public bool TreatSocketOpeningErrorAsWarning { get; set; }
 
@@ -82,7 +82,7 @@ public sealed class MqttTcpServerAdapter : IMqttServerAdapter
         }
     }
 
-    Task OnClientAcceptedAsync(IMqttChannelAdapter channelAdapter)
+    Task OnClientAcceptedAsync(MqttChannelAdapter channelAdapter)
     {
         var clientHandler = ClientHandler;
         if (clientHandler == null)

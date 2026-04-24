@@ -9,7 +9,7 @@ namespace BiharMQTT.Server.Internal.Formatter;
 
 public static class MqttPubRecPacketFactory
 {
-    public static MqttPacket Create(MqttPublishPacket publishPacket, DispatchApplicationMessageResult dispatchApplicationMessageResult)
+    public static MqttPubRecPacket Create(MqttPublishPacket publishPacket, DispatchApplicationMessageResult dispatchApplicationMessageResult)
     {
         ArgumentNullException.ThrowIfNull(publishPacket);
 

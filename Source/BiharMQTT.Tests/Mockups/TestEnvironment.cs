@@ -27,7 +27,7 @@ public sealed class TestEnvironment : IDisposable
     }
 
     public TestEnvironment(
-        TestContext testContext, MqttProtocolVersion protocolVersion = MqttProtocolVersion.V311, bool trackUnobservedTaskException = true)
+        TestContext testContext, MqttProtocolVersion protocolVersion = MqttProtocolVersion.V500, bool trackUnobservedTaskException = true)
     {
         _protocolVersion = protocolVersion;
         TestContext = testContext;

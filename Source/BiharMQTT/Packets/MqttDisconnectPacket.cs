@@ -6,12 +6,12 @@ using BiharMQTT.Protocol;
 
 namespace BiharMQTT.Packets;
 
-public sealed class MqttDisconnectPacket : MqttPacket
+public struct MqttDisconnectPacket
 {
     /// <summary>
     ///     Added in MQTTv5.
     /// </summary>
-    public MqttDisconnectReasonCode ReasonCode { get; set; } = MqttDisconnectReasonCode.NormalDisconnection;
+    public MqttDisconnectReasonCode ReasonCode { get; set; }
 
     /// <summary>
     ///     Added in MQTTv5.
@@ -33,7 +33,7 @@ public sealed class MqttDisconnectPacket : MqttPacket
     /// </summary>
     public List<MqttUserProperty> UserProperties { get; set; }
 
-    public override string ToString()
+    public override readonly string ToString()
     {
         return $"Disconnect: [ReasonCode={ReasonCode}] [ReasonString={ReasonString}] [ServerReference={ServerReference}] [SessionExpiryInterval={SessionExpiryInterval}]";
     }

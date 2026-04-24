@@ -93,7 +93,7 @@ public sealed class MqttBufferReader
     }
 
 
-    public bool PeekEqualsSequence(ReadOnlySpan<byte> str)
+    public bool AdvanceIfMatch(ReadOnlySpan<byte> str)
     {
         var stringLength = ReadTwoByteInteger();
 

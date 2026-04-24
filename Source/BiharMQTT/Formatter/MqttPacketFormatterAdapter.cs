@@ -5,9 +5,7 @@
 using System.Runtime.CompilerServices;
 using BiharMQTT.Adapter;
 using BiharMQTT.Exceptions;
-using BiharMQTT.Formatter.V3;
 using BiharMQTT.Formatter.V5;
-using BiharMQTT.Packets;
 
 namespace BiharMQTT.Formatter;
 
@@ -19,7 +17,7 @@ public sealed class MqttPacketFormatterAdapter
     readonly MqttBufferReader _bufferReader = new();
     readonly MqttBufferWriter _bufferWriter;
 
-    IMqttPacketFormatter _formatter;
+    MqttV5PacketFormatter _formatter;
 
     public MqttPacketFormatterAdapter(MqttBufferWriter mqttBufferWriter)
     {
@@ -34,15 +32,13 @@ public sealed class MqttPacketFormatterAdapter
 
     public MqttProtocolVersion ProtocolVersion { get; private set; } = MqttProtocolVersion.Unknown;
 
+    public MqttV5PacketDecoder Decoder => _formatter.Decoder;
+
+    public MqttV5PacketEncoder Encoder => _formatter.Encoder;
+
     public void Cleanup()
     {
         _bufferWriter.Cleanup();
-    }
-
-    public MqttPacket Decode(ReceivedMqttPacket receivedMqttPacket)
-    {
-        ThrowIfFormatterNotSet();
-        return _formatter.Decode(receivedMqttPacket);
     }
 
     public void DetectProtocolVersion(ReceivedMqttPacket receivedMqttPacket)
@@ -51,13 +47,7 @@ public sealed class MqttPacketFormatterAdapter
         UseProtocolVersion(protocolVersion);
     }
 
-    public MqttPacketBuffer Encode(MqttPacket packet)
-    {
-        ThrowIfFormatterNotSet();
-        return _formatter.Encode(packet);
-    }
-
-    public static IMqttPacketFormatter GetMqttPacketFormatter(MqttProtocolVersion protocolVersion, MqttBufferWriter bufferWriter)
+    public static MqttV5PacketFormatter GetMqttPacketFormatter(MqttProtocolVersion protocolVersion, MqttBufferWriter bufferWriter)
     {
         if (protocolVersion == MqttProtocolVersion.Unknown)
         {
@@ -67,7 +57,6 @@ public sealed class MqttPacketFormatterAdapter
         return protocolVersion switch
         {
             MqttProtocolVersion.V500 => new MqttV5PacketFormatter(bufferWriter),
-            MqttProtocolVersion.V310 or MqttProtocolVersion.V311 => new MqttV3PacketFormatter(bufferWriter, protocolVersion),
             _ => throw new NotSupportedException()
         };
     }
@@ -84,27 +73,21 @@ public sealed class MqttPacketFormatterAdapter
 
         _bufferReader.SetBuffer(receivedMqttPacket.Body.Array, receivedMqttPacket.Body.Offset, receivedMqttPacket.Body.Count);
 
-        if (_bufferReader.PeekEqualsSequence(MqttPrefix))
+        if (_bufferReader.AdvanceIfMatch(MqttPrefix))
         {
             var protocolLevel = _bufferReader.ReadByte();
 
             // Remove the mosquitto try_private flag (MQTT 3.1.1 Bridge).
-            // This flag is accepted but not yet used.
             protocolLevel &= 0x7F;
             if (protocolLevel == 5)
             {
                 return MqttProtocolVersion.V500;
             }
 
-            if (protocolLevel == 4)
-            {
-                return MqttProtocolVersion.V311;
-            }
-
-            throw new MqttProtocolViolationException($"Protocol level '{protocolLevel}' not supported.");
+            throw new MqttProtocolViolationException($"Protocol level '{protocolLevel}' not supported. Only MQTT v5 is supported.");
         }
 
-        throw new MqttProtocolViolationException($"Protocol not supported. F-off");
+        throw new MqttProtocolViolationException("Protocol not supported. Only MQTT v5 is supported.");
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

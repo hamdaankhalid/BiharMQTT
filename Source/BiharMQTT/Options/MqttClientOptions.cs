@@ -30,8 +30,6 @@ public sealed class MqttClientOptions
     /// </summary>
     public string AuthenticationMethod { get; set; }
 
-    public IMqttClientChannelOptions ChannelOptions { get; set; }
-
     /// <summary>
     ///     Gets or sets a value indicating whether clean sessions are used or not.
     ///     When a client connects to a broker it can connect using either a non persistent connection (clean session) or a

@@ -19,7 +19,7 @@ public sealed class ReaderExtensionsBenchmark : IDisposable, IAsyncDisposable
     [GlobalSetup]
     public void GlobalSetup()
     {
-        _mqttPacketFormatter = new MqttPacketFormatterAdapter(MqttProtocolVersion.V311, new MqttBufferWriter(4096, 65535));
+        _mqttPacketFormatter = new MqttPacketFormatterAdapter(MqttProtocolVersion.V500, new MqttBufferWriter(4096, 65535));
         var mqttMessage = new MqttApplicationMessageBuilder()
             .WithTopic("topic")
             .WithPayload(new byte[10 * 1024])

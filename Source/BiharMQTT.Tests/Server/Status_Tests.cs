@@ -46,9 +46,9 @@ public sealed class Status_Tests : BaseTestClass
         var server = await testEnvironment.StartServer(o => o.WithPersistentSessions());
 
         var c1 = await testEnvironment.ConnectClient(
-            new MqttClientOptionsBuilder().WithClientId("client1").WithCleanSession(false).WithProtocolVersion(MqttProtocolVersion.V311));
+            new MqttClientOptionsBuilder().WithClientId("client1").WithCleanSession(false).WithProtocolVersion(MqttProtocolVersion.V500));
         var c2 = await testEnvironment.ConnectClient(
-            new MqttClientOptionsBuilder().WithClientId("client2").WithCleanSession(false).WithProtocolVersion(MqttProtocolVersion.V311));
+            new MqttClientOptionsBuilder().WithClientId("client2").WithCleanSession(false).WithProtocolVersion(MqttProtocolVersion.V500));
 
         await c1.DisconnectAsync();
 

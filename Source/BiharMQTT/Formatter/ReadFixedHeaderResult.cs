@@ -16,9 +16,23 @@ public struct ReadFixedHeaderResult
         IsConnectionClosed = true
     };
 
-    public bool IsCanceled { get; set; }
+    private const byte CanceledFlag = 0x40;
+    private const byte ConnectionClosedFlag = 0x80;
 
-    public bool IsConnectionClosed { get; init; }
+    // byte 31 is set if is ConnectionClosed, byte 30 is set if is Canceled, the rest of the bits are reserved for future use
+    private byte _data;
+
+    public bool IsCanceled
+    {
+        readonly get => (_data & CanceledFlag) != 0;
+        init => _data = (byte)((_data & ~CanceledFlag) | (value ? CanceledFlag : 0));
+    }
+
+    public bool IsConnectionClosed
+    {
+        readonly get => (_data & ConnectionClosedFlag) != 0;
+        init => _data = (byte)((_data & ~ConnectionClosedFlag) | (value ? ConnectionClosedFlag : 0));
+    }
 
     public MqttFixedHeader FixedHeader { get; init; }
 }

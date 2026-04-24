@@ -7,7 +7,7 @@ using BiharMQTT.Protocol;
 namespace BiharMQTT.Packets;
 
 /// <summary>Added in MQTTv5.0.0.</summary>
-public sealed class MqttAuthPacket : MqttPacket
+public struct MqttAuthPacket
 {
     public byte[] AuthenticationData { get; set; }
 

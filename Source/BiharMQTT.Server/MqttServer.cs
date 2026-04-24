@@ -10,14 +10,14 @@ using BiharMQTT.Internal;
 using BiharMQTT.Packets;
 using BiharMQTT.Protocol;
 using BiharMQTT.Server.Internal;
+using BiharMQTT.Server.Internal.Adapter;
 
 namespace BiharMQTT.Server;
 
 public class MqttServer : Disposable
 {
-    readonly ICollection<IMqttServerAdapter> _adapters;
+    readonly MqttTcpServerAdapter _adapter;
     readonly MqttClientSessionsManager _clientSessionsManager;
-    readonly MqttServerEventContainer _eventContainer = new();
     readonly MqttServerKeepAliveMonitor _keepAliveMonitor;
     readonly MqttNetSourceLogger _logger;
     readonly MqttServerOptions _options;
@@ -28,169 +28,22 @@ public class MqttServer : Disposable
     CancellationTokenSource _cancellationTokenSource;
     bool _isStopping;
 
-    public MqttServer(MqttServerOptions options, IEnumerable<IMqttServerAdapter> adapters, IMqttNetLogger logger)
+    public MqttServer(MqttServerOptions options, MqttTcpServerAdapter adapter, IMqttNetLogger logger)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
 
-        ArgumentNullException.ThrowIfNull(adapters);
+        ArgumentNullException.ThrowIfNull(adapter);
 
-        _adapters = adapters.ToList();
+        _adapter = adapter;
 
         _rootLogger = logger ?? throw new ArgumentNullException(nameof(logger));
         _logger = logger.WithSource(nameof(MqttServer));
 
         _ringBuffer = new MessageRingBuffer(options.RingBufferCapacityBytes, options.RingBufferMaxSlots);
 
-        _retainedMessagesManager = new MqttRetainedMessagesManager(_eventContainer, _rootLogger);
-        _clientSessionsManager = new MqttClientSessionsManager(options, _retainedMessagesManager, _eventContainer, _rootLogger, _ringBuffer);
+        _retainedMessagesManager = new MqttRetainedMessagesManager(_rootLogger);
+        _clientSessionsManager = new MqttClientSessionsManager(options, _retainedMessagesManager, _rootLogger, _ringBuffer);
         _keepAliveMonitor = new MqttServerKeepAliveMonitor(options, _clientSessionsManager, _rootLogger);
-    }
-
-    public event Func<ApplicationMessageEnqueuedEventArgs, Task> ApplicationMessageEnqueuedOrDroppedAsync
-    {
-        add => _eventContainer.ApplicationMessageEnqueuedOrDroppedEvent.AddHandler(value);
-        remove => _eventContainer.ApplicationMessageEnqueuedOrDroppedEvent.RemoveHandler(value);
-    }
-
-    public event Func<ApplicationMessageNotConsumedEventArgs, Task> ApplicationMessageNotConsumedAsync
-    {
-        add => _eventContainer.ApplicationMessageNotConsumedEvent.AddHandler(value);
-        remove => _eventContainer.ApplicationMessageNotConsumedEvent.RemoveHandler(value);
-    }
-
-    public event Func<ClientAcknowledgedPublishPacketEventArgs, Task> ClientAcknowledgedPublishPacketAsync
-    {
-        add => _eventContainer.ClientAcknowledgedPublishPacketEvent.AddHandler(value);
-        remove => _eventContainer.ClientAcknowledgedPublishPacketEvent.RemoveHandler(value);
-    }
-
-    public event Func<ClientConnectedEventArgs, Task> ClientConnectedAsync
-    {
-        add => _eventContainer.ClientConnectedEvent.AddHandler(value);
-        remove => _eventContainer.ClientConnectedEvent.RemoveHandler(value);
-    }
-
-    public event Func<ClientDisconnectedEventArgs, Task> ClientDisconnectedAsync
-    {
-        add => _eventContainer.ClientDisconnectedEvent.AddHandler(value);
-        remove => _eventContainer.ClientDisconnectedEvent.RemoveHandler(value);
-    }
-
-    public event Func<ClientSubscribedTopicEventArgs, Task> ClientSubscribedTopicAsync
-    {
-        add => _eventContainer.ClientSubscribedTopicEvent.AddHandler(value);
-        remove => _eventContainer.ClientSubscribedTopicEvent.RemoveHandler(value);
-    }
-
-    public event Func<ClientUnsubscribedTopicEventArgs, Task> ClientUnsubscribedTopicAsync
-    {
-        add => _eventContainer.ClientUnsubscribedTopicEvent.AddHandler(value);
-        remove => _eventContainer.ClientUnsubscribedTopicEvent.RemoveHandler(value);
-    }
-
-    public event Func<InterceptingClientApplicationMessageEnqueueEventArgs, Task> InterceptingClientEnqueueAsync
-    {
-        add => _eventContainer.InterceptingClientEnqueueEvent.AddHandler(value);
-        remove => _eventContainer.InterceptingClientEnqueueEvent.RemoveHandler(value);
-    }
-
-    public event Func<InterceptingPacketEventArgs, Task> InterceptingInboundPacketAsync
-    {
-        add => _eventContainer.InterceptingInboundPacketEvent.AddHandler(value);
-        remove => _eventContainer.InterceptingInboundPacketEvent.RemoveHandler(value);
-    }
-
-    public event Func<InterceptingPacketEventArgs, Task> InterceptingOutboundPacketAsync
-    {
-        add => _eventContainer.InterceptingOutboundPacketEvent.AddHandler(value);
-        remove => _eventContainer.InterceptingOutboundPacketEvent.RemoveHandler(value);
-    }
-
-    public event Func<InterceptingPublishEventArgs, Task> InterceptingPublishAsync
-    {
-        add => _eventContainer.InterceptingPublishEvent.AddHandler(value);
-        remove => _eventContainer.InterceptingPublishEvent.RemoveHandler(value);
-    }
-
-    /// <summary>
-    ///     Fired when the ring buffer dispatch path is active.  The event args are passed
-    ///     by <c>ref</c> as a stack-allocated struct — zero heap allocations per message.
-    ///     <para>
-    ///         <b>IMPORTANT</b>: The payload memory is only valid during the callback.
-    ///         Do NOT store the <c>ReadOnlyMemory&lt;byte&gt;</c> reference beyond the
-    ///         callback return.  Call <c>.ToArray()</c> if you need a persistent copy.
-    ///     </para>
-    /// </summary>
-    public event BufferedPublishHandler InterceptingPublishBufferedAsync
-    {
-        add => _eventContainer.InterceptingPublishBufferedEvent.AddHandler(value);
-        remove => _eventContainer.InterceptingPublishBufferedEvent.RemoveHandler(value);
-    }
-
-    public event Func<InterceptingSubscriptionEventArgs, Task> InterceptingSubscriptionAsync
-    {
-        add => _eventContainer.InterceptingSubscriptionEvent.AddHandler(value);
-        remove => _eventContainer.InterceptingSubscriptionEvent.RemoveHandler(value);
-    }
-
-    public event Func<InterceptingUnsubscriptionEventArgs, Task> InterceptingUnsubscriptionAsync
-    {
-        add => _eventContainer.InterceptingUnsubscriptionEvent.AddHandler(value);
-        remove => _eventContainer.InterceptingUnsubscriptionEvent.RemoveHandler(value);
-    }
-
-    public event Func<LoadingRetainedMessagesEventArgs, Task> LoadingRetainedMessageAsync
-    {
-        add => _eventContainer.LoadingRetainedMessagesEvent.AddHandler(value);
-        remove => _eventContainer.LoadingRetainedMessagesEvent.RemoveHandler(value);
-    }
-
-    public event Func<EventArgs, Task> PreparingSessionAsync
-    {
-        add => _eventContainer.PreparingSessionEvent.AddHandler(value);
-        remove => _eventContainer.PreparingSessionEvent.RemoveHandler(value);
-    }
-
-    public event Func<QueueMessageOverwrittenEventArgs, Task> QueuedApplicationMessageOverwrittenAsync
-    {
-        add => _eventContainer.QueuedApplicationMessageOverwrittenEvent.AddHandler(value);
-        remove => _eventContainer.QueuedApplicationMessageOverwrittenEvent.RemoveHandler(value);
-    }
-
-    public event Func<RetainedMessageChangedEventArgs, Task> RetainedMessageChangedAsync
-    {
-        add => _eventContainer.RetainedMessageChangedEvent.AddHandler(value);
-        remove => _eventContainer.RetainedMessageChangedEvent.RemoveHandler(value);
-    }
-
-    public event Func<EventArgs, Task> RetainedMessagesClearedAsync
-    {
-        add => _eventContainer.RetainedMessagesClearedEvent.AddHandler(value);
-        remove => _eventContainer.RetainedMessagesClearedEvent.RemoveHandler(value);
-    }
-
-    public event Func<SessionDeletedEventArgs, Task> SessionDeletedAsync
-    {
-        add => _eventContainer.SessionDeletedEvent.AddHandler(value);
-        remove => _eventContainer.SessionDeletedEvent.RemoveHandler(value);
-    }
-
-    public event Func<EventArgs, Task> StartedAsync
-    {
-        add => _eventContainer.StartedEvent.AddHandler(value);
-        remove => _eventContainer.StartedEvent.RemoveHandler(value);
-    }
-
-    public event Func<EventArgs, Task> StoppedAsync
-    {
-        add => _eventContainer.StoppedEvent.AddHandler(value);
-        remove => _eventContainer.StoppedEvent.RemoveHandler(value);
-    }
-
-    public event Func<ValidatingConnectionEventArgs, Task> ValidatingConnectionAsync
-    {
-        add => _eventContainer.ValidatingConnectionEvent.AddHandler(value);
-        remove => _eventContainer.ValidatingConnectionEvent.RemoveHandler(value);
     }
 
     /// <summary>
@@ -344,13 +197,8 @@ public class MqttServer : Disposable
         _clientSessionsManager.Start();
         _keepAliveMonitor.Start(cancellationToken);
 
-        foreach (var adapter in _adapters)
-        {
-            adapter.ClientHandler = c => OnHandleClient(c, cancellationToken);
-            await adapter.StartAsync(_options, _rootLogger).ConfigureAwait(false);
-        }
-
-        await _eventContainer.StartedEvent.InvokeAsync(EventArgs.Empty).ConfigureAwait(false);
+        _adapter.ClientHandler = c => OnHandleClient(c, cancellationToken);
+        await _adapter.StartAsync(_options, _rootLogger).ConfigureAwait(false);
 
         _logger.Info("Started");
     }
@@ -372,19 +220,14 @@ public class MqttServer : Disposable
 
             await _clientSessionsManager.CloseAllConnections(options.DefaultClientDisconnectOptions).ConfigureAwait(false);
 
-            foreach (var adapter in _adapters)
-            {
-                adapter.ClientHandler = null;
-                await adapter.StopAsync().ConfigureAwait(false);
-            }
+            _adapter.ClientHandler = null;
+            await _adapter.StopAsync().ConfigureAwait(false);
         }
         finally
         {
             _cancellationTokenSource?.Dispose();
             _cancellationTokenSource = null;
         }
-
-        await _eventContainer.StoppedEvent.InvokeAsync(EventArgs.Empty).ConfigureAwait(false);
 
         _logger.Info("Stopped");
     }
@@ -431,19 +274,14 @@ public class MqttServer : Disposable
         if (disposing)
         {
             StopAsync(new MqttServerStopOptions()).GetAwaiter().GetResult();
-
-            foreach (var adapter in _adapters)
-            {
-                adapter.Dispose();
-            }
-
+            _adapter.Dispose();
             _ringBuffer?.Dispose();
         }
 
         base.Dispose(disposing);
     }
 
-    Task OnHandleClient(IMqttChannelAdapter channelAdapter, CancellationToken cancellationToken)
+    Task OnHandleClient(MqttChannelAdapter channelAdapter, CancellationToken cancellationToken)
     {
         if (_isStopping || !AcceptNewConnections)
         {

@@ -12,7 +12,6 @@ using BiharMQTT.Exceptions;
 using BiharMQTT.Formatter;
 using BiharMQTT.Implementations;
 using BiharMQTT.Internal;
-using BiharMQTT.Packets;
 
 namespace BiharMQTT.Adapter;
 
@@ -134,7 +133,7 @@ public sealed class MqttChannelAdapter : Disposable
         }
     }
 
-    public async Task<MqttPacket> ReceivePacketAsync(CancellationToken cancellationToken)
+    public async Task<ReceivedMqttPacket> ReceivePacketAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ThrowIfDisposed();
@@ -154,7 +153,7 @@ public sealed class MqttChannelAdapter : Disposable
 
             if (receivedPacket.TotalLength == 0 || cancellationToken.IsCancellationRequested)
             {
-                return null;
+                return ReceivedMqttPacket.Empty;
             }
 
             Interlocked.Add(ref _statistics._bytesSent, receivedPacket.TotalLength);
@@ -164,15 +163,7 @@ public sealed class MqttChannelAdapter : Disposable
                 PacketFormatterAdapter.DetectProtocolVersion(receivedPacket);
             }
 
-            var packet = PacketFormatterAdapter.Decode(receivedPacket);
-            if (packet == null)
-            {
-                throw new MqttProtocolViolationException("Received malformed packet.");
-            }
-
-            _logger.Verbose("RX ({0} bytes) <<< {1}", receivedPacket.TotalLength, packet);
-
-            return packet;
+            return receivedPacket;
         }
         catch (OperationCanceledException)
         {
@@ -188,7 +179,7 @@ public sealed class MqttChannelAdapter : Disposable
             }
         }
 
-        return null;
+        return ReceivedMqttPacket.Empty;
     }
 
     public void ResetStatistics()
@@ -196,7 +187,7 @@ public sealed class MqttChannelAdapter : Disposable
         _statistics.Reset();
     }
 
-    public async Task SendPacketAsync(MqttPacket packet, CancellationToken cancellationToken)
+    public async Task SendPacketAsync(MqttPacketBuffer packetBuffer, CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
 
@@ -210,10 +201,6 @@ public sealed class MqttChannelAdapter : Disposable
 
             try
             {
-                var packetBuffer = PacketFormatterAdapter.Encode(packet);
-
-                _logger.Verbose("TX ({0} bytes) >>> {1}", packetBuffer.Length, packet);
-
                 if (packetBuffer.Payload.Length == 0 || !AllowPacketFragmentation)
                 {
                     var joined = packetBuffer.Join();

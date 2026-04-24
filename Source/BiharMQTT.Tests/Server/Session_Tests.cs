@@ -27,7 +27,7 @@ public sealed class Session_Tests : BaseTestClass
         // Create client with clean session and long session expiry interval
 
         var client1 = await testEnvironment.ConnectClient(
-            o => o.WithProtocolVersion(MqttProtocolVersion.V311)
+            o => o.WithProtocolVersion(MqttProtocolVersion.V500)
                 .WithTcpServer("127.0.0.1", testEnvironment.ServerPort)
                 .WithSessionExpiryInterval(9999) // not relevant for v311 but testing impact
                 .WithCleanSession() // start and end with clean session
@@ -46,7 +46,7 @@ public sealed class Session_Tests : BaseTestClass
 
         var client2 = testEnvironment.CreateClient();
         var options = testEnvironment.ClientFactory.CreateClientOptionsBuilder()
-            .WithProtocolVersion(MqttProtocolVersion.V311)
+            .WithProtocolVersion(MqttProtocolVersion.V500)
             .WithTcpServer("127.0.0.1", testEnvironment.ServerPort)
             .WithSessionExpiryInterval(9999) // not relevant for v311 but testing impact
             .WithCleanSession(false) // see if there is a session
@@ -132,8 +132,8 @@ public sealed class Session_Tests : BaseTestClass
     }
 
     [TestMethod]
-    [DataRow(MqttProtocolVersion.V310)]
-    [DataRow(MqttProtocolVersion.V311)]
+    [DataRow(MqttProtocolVersion.V500)]
+    [DataRow(MqttProtocolVersion.V500)]
     [DataRow(MqttProtocolVersion.V500)]
     public async Task Handle_Parallel_Connection_Attempts(MqttProtocolVersion protocolVersion)
     {

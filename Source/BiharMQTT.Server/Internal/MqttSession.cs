@@ -14,7 +14,6 @@ public sealed class MqttSession : IDisposable
 {
     readonly MqttClientSessionsManager _clientSessionsManager;
     readonly MqttConnectPacket _connectPacket;
-    readonly MqttServerEventContainer _eventContainer;
     readonly MqttPacketBus _packetBus = new();
     readonly MqttPacketIdentifierProvider _packetIdentifierProvider = new();
     readonly MqttServerOptions _serverOptions;
@@ -30,7 +29,6 @@ public sealed class MqttSession : IDisposable
         MqttConnectPacket connectPacket,
         IDictionary items,
         MqttServerOptions serverOptions,
-        MqttServerEventContainer eventContainer,
         MqttRetainedMessagesManager retainedMessagesManager,
         MqttClientSessionsManager clientSessionsManager)
     {
@@ -39,9 +37,8 @@ public sealed class MqttSession : IDisposable
         _connectPacket = connectPacket ?? throw new ArgumentNullException(nameof(connectPacket));
         _serverOptions = serverOptions ?? throw new ArgumentNullException(nameof(serverOptions));
         _clientSessionsManager = clientSessionsManager ?? throw new ArgumentNullException(nameof(clientSessionsManager));
-        _eventContainer = eventContainer ?? throw new ArgumentNullException(nameof(eventContainer));
 
-        _subscriptionsManager = new MqttClientSubscriptionsManager(this, eventContainer, retainedMessagesManager, clientSessionsManager);
+        _subscriptionsManager = new MqttClientSubscriptionsManager(this, retainedMessagesManager, clientSessionsManager);
     }
 
     public DateTime CreatedTimestamp { get; } = DateTime.UtcNow;
@@ -128,12 +125,6 @@ public sealed class MqttSession : IDisposable
                 if (firstItem != null)
                 {
                     firstItem.Fail(new MqttPendingMessagesOverflowException(Id, _serverOptions.PendingMessagesOverflowStrategy));
-
-                    if (_eventContainer.QueuedApplicationMessageOverwrittenEvent.HasHandlers)
-                    {
-                        var eventArgs = new QueueMessageOverwrittenEventArgs(Id, firstItem.Packet);
-                        _eventContainer.QueuedApplicationMessageOverwrittenEvent.InvokeAsync(eventArgs).ConfigureAwait(false);
-                    }
                 }
             }
         }

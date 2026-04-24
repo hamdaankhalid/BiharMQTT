@@ -14,8 +14,6 @@ public static class MqttUserPropertyExtensions
     /// </summary>
     public static string ReadValueAsString(this MqttUserProperty userProperty)
     {
-        ArgumentNullException.ThrowIfNull(userProperty);
-
         var buffer = userProperty.ValueBuffer;
         if (buffer.IsEmpty)
         {

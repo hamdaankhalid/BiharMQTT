@@ -20,7 +20,7 @@ public sealed class ValidatingConnectionEventArgs : EventArgs
 {
     readonly MqttConnectPacket _connectPacket;
 
-    public ValidatingConnectionEventArgs(MqttConnectPacket connectPacket, IMqttChannelAdapter clientAdapter, IDictionary sessionItems, CancellationToken cancellationToken)
+    public ValidatingConnectionEventArgs(MqttConnectPacket connectPacket, MqttChannelAdapter clientAdapter, IDictionary sessionItems, CancellationToken cancellationToken)
     {
         _connectPacket = connectPacket ?? throw new ArgumentNullException(nameof(connectPacket));
         ChannelAdapter = clientAdapter ?? throw new ArgumentNullException(nameof(clientAdapter));
@@ -52,7 +52,7 @@ public sealed class ValidatingConnectionEventArgs : EventArgs
     ///     Gets the channel adapter. This can be a _MqttConnectionContext_ (used in ASP.NET), a _MqttChannelAdapter_ (used for
     ///     TCP or WebSockets) or a custom implementation.
     /// </summary>
-    public IMqttChannelAdapter ChannelAdapter { get; }
+    public MqttChannelAdapter ChannelAdapter { get; }
 
     /// <summary>
     ///     Gets or sets a value indicating whether clean sessions are used or not.

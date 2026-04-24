@@ -2,22 +2,23 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using BiharMQTT.Adapter;
 using BiharMQTT.Exceptions;
-using BiharMQTT.Packets;
 using BiharMQTT.Internal;
+using BiharMQTT.Protocol;
 
 namespace BiharMQTT.PacketDispatcher;
 
-public sealed class MqttPacketAwaitable<TPacket> : IMqttPacketAwaitable where TPacket : MqttPacket
+public sealed class MqttPacketAwaitable : IMqttPacketAwaitable
 {
-    readonly AsyncTaskCompletionSource<MqttPacket> _promise = new();
+    readonly AsyncTaskCompletionSource<ReceivedMqttPacket> _promise = new();
     readonly MqttPacketDispatcher _owningPacketDispatcher;
 
-    public MqttPacketAwaitable(ushort packetIdentifier, MqttPacketDispatcher owningPacketDispatcher)
+    public MqttPacketAwaitable(MqttControlPacketType packetType, ushort packetIdentifier, MqttPacketDispatcher owningPacketDispatcher)
     {
         Filter = new MqttPacketAwaitableFilter
         {
-            Type = typeof(TPacket),
+            PacketType = packetType,
             Identifier = packetIdentifier
         };
 
@@ -26,19 +27,16 @@ public sealed class MqttPacketAwaitable<TPacket> : IMqttPacketAwaitable where TP
 
     public MqttPacketAwaitableFilter Filter { get; }
 
-    public async Task<TPacket> WaitOneAsync(CancellationToken cancellationToken)
+    public async Task<ReceivedMqttPacket> WaitOneAsync(CancellationToken cancellationToken)
     {
         await using (cancellationToken.Register(() => Fail(new MqttCommunicationTimedOutException())))
         {
-            var packet = await _promise.Task.ConfigureAwait(false);
-            return (TPacket)packet;
+            return await _promise.Task.ConfigureAwait(false);
         }
     }
 
-    public void Complete(MqttPacket packet)
+    public void Complete(ReceivedMqttPacket packet)
     {
-        ArgumentNullException.ThrowIfNull(packet);
-
         _promise.TrySetResult(packet);
     }
 

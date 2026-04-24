@@ -108,7 +108,7 @@ public class General_Tests : BaseTestClass
             return CompletedTask.Instance;
         };
 
-        await client.ConnectAsync(new MqttClientOptionsBuilder().WithTcpServer("localhost", testEnvironment.ServerPort).WithProtocolVersion(MqttProtocolVersion.V311).Build());
+        await client.ConnectAsync(new MqttClientOptionsBuilder().WithTcpServer("localhost", testEnvironment.ServerPort).WithProtocolVersion(MqttProtocolVersion.V500).Build());
 
         await LongTestDelay();
 

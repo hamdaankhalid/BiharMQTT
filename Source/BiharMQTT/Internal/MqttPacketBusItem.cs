@@ -2,24 +2,24 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-using BiharMQTT.Packets;
+using BiharMQTT.Formatter;
 
 namespace BiharMQTT.Internal;
 
-public sealed class MqttPacketBusItem
+public struct MqttPacketBusItem
 {
-    readonly AsyncTaskCompletionSource<MqttPacket> _promise = new();
+    readonly AsyncTaskCompletionSource<bool> _promise = new();
 
     int _terminated;
 
-    public MqttPacketBusItem(MqttPacket packet)
+    public MqttPacketBusItem(MqttPacketBuffer packetBuffer)
     {
-        Packet = packet ?? throw new ArgumentNullException(nameof(packet));
+        PacketBuffer = packetBuffer;
     }
 
     public event EventHandler Completed;
 
-    public MqttPacket Packet { get; }
+    public MqttPacketBuffer PacketBuffer { get; }
 
     /// <summary>
     ///     Optional callback invoked exactly once when this item reaches a terminal state
@@ -41,7 +41,7 @@ public sealed class MqttPacketBusItem
 
     public void Complete()
     {
-        _promise.TrySetResult(Packet);
+        _promise.TrySetResult(true);
         InvokeOnTerminated();
         Completed?.Invoke(this, EventArgs.Empty);
     }
@@ -52,7 +52,7 @@ public sealed class MqttPacketBusItem
         InvokeOnTerminated();
     }
 
-    public Task<MqttPacket> WaitAsync()
+    public Task WaitAsync()
     {
         return _promise.Task;
     }

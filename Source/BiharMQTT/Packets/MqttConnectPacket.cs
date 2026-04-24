@@ -6,7 +6,7 @@ using BiharMQTT.Protocol;
 
 namespace BiharMQTT.Packets;
 
-public sealed class MqttConnectPacket : MqttPacket
+public struct MqttConnectPacket
 {
     public byte[] AuthenticationData { get; set; }
 
@@ -53,9 +53,9 @@ public sealed class MqttConnectPacket : MqttPacket
 
     public uint WillMessageExpiryInterval { get; set; }
 
-    public MqttPayloadFormatIndicator WillPayloadFormatIndicator { get; set; } = MqttPayloadFormatIndicator.Unspecified;
+    public MqttPayloadFormatIndicator WillPayloadFormatIndicator { get; set; }
 
-    public MqttQualityOfServiceLevel WillQoS { get; set; } = MqttQualityOfServiceLevel.AtMostOnce;
+    public MqttQualityOfServiceLevel WillQoS { get; set; }
 
     public bool WillRetain { get; set; }
 
@@ -65,7 +65,7 @@ public sealed class MqttConnectPacket : MqttPacket
 
     public bool TryPrivate { get; set; }
 
-    public override string ToString()
+    public override readonly string ToString()
     {
         var passwordText = string.Empty;
 

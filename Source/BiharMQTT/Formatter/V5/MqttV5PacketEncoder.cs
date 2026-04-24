@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using System.Buffers;
 using BiharMQTT.Exceptions;
 using BiharMQTT.Packets;
 using BiharMQTT.Protocol;
@@ -15,43 +16,135 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
     readonly MqttBufferWriter _bufferWriter = bufferWriter ?? throw new ArgumentNullException(nameof(bufferWriter));
     readonly MqttV5PropertiesWriter _propertiesWriter = new(new MqttBufferWriter(1024, 4096));
 
-    public MqttPacketBuffer Encode(MqttPacket packet)
+    public MqttPacketBuffer Encode(MqttConnectPacket packet)
     {
-        ArgumentNullException.ThrowIfNull(packet);
+        BeginEncode();
+        var fixedHeader = EncodeConnectPacket(packet);
+        return FinalizePacket(fixedHeader);
+    }
 
-        // Leave enough headspace for max header size (fixed + 4 variable remaining length = 5 bytes)
+    public MqttPacketBuffer Encode(MqttConnAckPacket packet)
+    {
+        BeginEncode();
+        var fixedHeader = EncodeConnAckPacket(packet);
+        return FinalizePacket(fixedHeader);
+    }
+
+    public MqttPacketBuffer Encode(MqttDisconnectPacket packet)
+    {
+        BeginEncode();
+        var fixedHeader = EncodeDisconnectPacket(packet);
+        return FinalizePacket(fixedHeader);
+    }
+
+    public MqttPacketBuffer Encode(MqttPublishPacket packet)
+    {
+        BeginEncode();
+        var fixedHeader = EncodePublishPacket(packet);
+        return FinalizePacket(fixedHeader, packet.Payload);
+    }
+
+    public MqttPacketBuffer Encode(MqttPubAckPacket packet)
+    {
+        BeginEncode();
+        var fixedHeader = EncodePubAckPacket(packet);
+        return FinalizePacket(fixedHeader);
+    }
+
+    public MqttPacketBuffer Encode(MqttPubRecPacket packet)
+    {
+        BeginEncode();
+        var fixedHeader = EncodePubRecPacket(packet);
+        return FinalizePacket(fixedHeader);
+    }
+
+    public MqttPacketBuffer Encode(MqttPubRelPacket packet)
+    {
+        BeginEncode();
+        var fixedHeader = EncodePubRelPacket(packet);
+        return FinalizePacket(fixedHeader);
+    }
+
+    public MqttPacketBuffer Encode(MqttPubCompPacket packet)
+    {
+        BeginEncode();
+        var fixedHeader = EncodePubCompPacket(packet);
+        return FinalizePacket(fixedHeader);
+    }
+
+    public MqttPacketBuffer Encode(MqttSubscribePacket packet)
+    {
+        BeginEncode();
+        var fixedHeader = EncodeSubscribePacket(packet);
+        return FinalizePacket(fixedHeader);
+    }
+
+    public MqttPacketBuffer Encode(MqttSubAckPacket packet)
+    {
+        BeginEncode();
+        var fixedHeader = EncodeSubAckPacket(packet);
+        return FinalizePacket(fixedHeader);
+    }
+
+    public MqttPacketBuffer Encode(MqttUnsubscribePacket packet)
+    {
+        BeginEncode();
+        var fixedHeader = EncodeUnsubscribePacket(packet);
+        return FinalizePacket(fixedHeader);
+    }
+
+    public MqttPacketBuffer Encode(MqttUnsubAckPacket packet)
+    {
+        BeginEncode();
+        var fixedHeader = EncodeUnsubAckPacket(packet);
+        return FinalizePacket(fixedHeader);
+    }
+
+    public MqttPacketBuffer Encode(MqttAuthPacket packet)
+    {
+        BeginEncode();
+        var fixedHeader = EncodeAuthPacket(packet);
+        return FinalizePacket(fixedHeader);
+    }
+
+    public MqttPacketBuffer EncodePingReq()
+    {
+        BeginEncode();
+        var fixedHeader = EncodePingReqPacket();
+        return FinalizePacket(fixedHeader);
+    }
+
+    public MqttPacketBuffer EncodePingResp()
+    {
+        BeginEncode();
+        var fixedHeader = EncodePingRespPacket();
+        return FinalizePacket(fixedHeader);
+    }
+
+    void BeginEncode()
+    {
         const int reservedHeaderSize = 5;
-
         _bufferWriter.Reset(reservedHeaderSize);
         _bufferWriter.Seek(reservedHeaderSize);
+    }
 
-        var fixedHeader = EncodePacket(packet);
+    MqttPacketBuffer FinalizePacket(byte fixedHeader, ReadOnlySequence<byte> payload = default)
+    {
+        const int reservedHeaderSize = 5;
         var remainingLength = (uint)_bufferWriter.Length - reservedHeaderSize;
-
-        if (packet is MqttPublishPacket publishPacket)
-        {
-            var payload = publishPacket.Payload;
-            remainingLength += (uint)payload.Length;
-        }
-        else
-        {
-            publishPacket = null;
-        }
+        remainingLength += (uint)payload.Length;
 
         var remainingLengthSize = MqttBufferWriter.GetVariableByteIntegerSize(remainingLength);
-
         var headerSize = FixedHeaderSize + remainingLengthSize;
-        var headerOffset = 5 - headerSize;
+        var headerOffset = reservedHeaderSize - headerSize;
 
-        // Position cursor on correct offset on beginning of array (has leading 0x0)
         _bufferWriter.Seek(headerOffset);
         _bufferWriter.WriteByte(fixedHeader);
         _bufferWriter.WriteVariableByteInteger(remainingLength);
 
         var buffer = _bufferWriter.GetBuffer();
         var firstSegment = new ArraySegment<byte>(buffer, headerOffset, _bufferWriter.Length - headerOffset);
-
-        return publishPacket == null ? new MqttPacketBuffer(firstSegment) : new MqttPacketBuffer(firstSegment, publishPacket.Payload);
+        return payload.Length > 0 ? new MqttPacketBuffer(firstSegment, payload) : new MqttPacketBuffer(firstSegment);
     }
 
     byte EncodeAuthPacket(MqttAuthPacket packet)
@@ -216,29 +309,6 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
         return MqttBufferWriter.BuildFixedHeader(MqttControlPacketType.Disconnect);
     }
 
-    byte EncodePacket(MqttPacket packet)
-    {
-        return packet switch
-        {
-            MqttConnectPacket connectPacket => EncodeConnectPacket(connectPacket),
-            MqttConnAckPacket connAckPacket => EncodeConnAckPacket(connAckPacket),
-            MqttDisconnectPacket disconnectPacket => EncodeDisconnectPacket(disconnectPacket),
-            MqttPingReqPacket _ => EncodePingReqPacket(),
-            MqttPingRespPacket _ => EncodePingRespPacket(),
-            MqttPublishPacket publishPacket => EncodePublishPacket(publishPacket),
-            MqttPubAckPacket pubAckPacket => EncodePubAckPacket(pubAckPacket),
-            MqttPubRecPacket pubRecPacket => EncodePubRecPacket(pubRecPacket),
-            MqttPubRelPacket pubRelPacket => EncodePubRelPacket(pubRelPacket),
-            MqttPubCompPacket pubCompPacket => EncodePubCompPacket(pubCompPacket),
-            MqttSubscribePacket subscribePacket => EncodeSubscribePacket(subscribePacket),
-            MqttSubAckPacket subAckPacket => EncodeSubAckPacket(subAckPacket),
-            MqttUnsubscribePacket unsubscribePacket => EncodeUnsubscribePacket(unsubscribePacket),
-            MqttUnsubAckPacket unsubAckPacket => EncodeUnsubAckPacket(unsubAckPacket),
-            MqttAuthPacket authPacket => EncodeAuthPacket(authPacket),
-            _ => throw new MqttProtocolViolationException("Packet type invalid.")
-        };
-    }
-
     static byte EncodePingReqPacket()
     {
         return MqttBufferWriter.BuildFixedHeader(MqttControlPacketType.PingReq);
@@ -273,7 +343,7 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
 
     byte EncodePubCompPacket(MqttPubCompPacket packet)
     {
-        ThrowIfPacketIdentifierIsInvalid(packet.PacketIdentifier, packet);
+        ThrowIfPacketIdentifierIsInvalid(packet.PacketIdentifier, nameof(MqttPubCompPacket));
 
         _bufferWriter.WriteTwoByteInteger(packet.PacketIdentifier);
 
@@ -350,7 +420,7 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
 
     byte EncodePubRecPacket(MqttPubRecPacket packet)
     {
-        ThrowIfPacketIdentifierIsInvalid(packet.PacketIdentifier, packet);
+        ThrowIfPacketIdentifierIsInvalid(packet.PacketIdentifier, nameof(MqttPubRecPacket));
 
         _propertiesWriter.WriteReasonString(packet.ReasonString);
         _propertiesWriter.WriteUserProperties(packet.UserProperties);
@@ -369,7 +439,7 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
 
     byte EncodePubRelPacket(MqttPubRelPacket packet)
     {
-        ThrowIfPacketIdentifierIsInvalid(packet.PacketIdentifier, packet);
+        ThrowIfPacketIdentifierIsInvalid(packet.PacketIdentifier, nameof(MqttPubRelPacket));
 
         _propertiesWriter.WriteReasonString(packet.ReasonString);
         _propertiesWriter.WriteUserProperties(packet.UserProperties);
@@ -393,7 +463,7 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
             throw new MqttProtocolViolationException("At least one reason code must be set[MQTT - 3.8.3 - 3].");
         }
 
-        ThrowIfPacketIdentifierIsInvalid(packet.PacketIdentifier, packet);
+        ThrowIfPacketIdentifierIsInvalid(packet.PacketIdentifier, nameof(MqttSubAckPacket));
 
         _bufferWriter.WriteTwoByteInteger(packet.PacketIdentifier);
 
@@ -418,7 +488,7 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
             throw new MqttProtocolViolationException("At least one topic filter must be set [MQTT-3.8.3-3].");
         }
 
-        ThrowIfPacketIdentifierIsInvalid(packet.PacketIdentifier, packet);
+        ThrowIfPacketIdentifierIsInvalid(packet.PacketIdentifier, nameof(MqttSubscribePacket));
 
         _bufferWriter.WriteTwoByteInteger(packet.PacketIdentifier);
 
@@ -464,7 +534,7 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
 
     byte EncodeUnsubAckPacket(MqttUnsubAckPacket packet)
     {
-        ThrowIfPacketIdentifierIsInvalid(packet.PacketIdentifier, packet);
+        ThrowIfPacketIdentifierIsInvalid(packet.PacketIdentifier, nameof(MqttUnsubAckPacket));
 
         _bufferWriter.WriteTwoByteInteger(packet.PacketIdentifier);
 
@@ -489,7 +559,7 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
             throw new MqttProtocolViolationException("At least one topic filter must be set [MQTT-3.10.3-2].");
         }
 
-        ThrowIfPacketIdentifierIsInvalid(packet.PacketIdentifier, packet);
+        ThrowIfPacketIdentifierIsInvalid(packet.PacketIdentifier, nameof(MqttUnsubscribePacket));
 
         _bufferWriter.WriteTwoByteInteger(packet.PacketIdentifier);
 
@@ -506,13 +576,13 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
         return MqttBufferWriter.BuildFixedHeader(MqttControlPacketType.Unsubscribe, 0x02);
     }
 
-    static void ThrowIfPacketIdentifierIsInvalid(ushort packetIdentifier, MqttPacket packet)
+    static void ThrowIfPacketIdentifierIsInvalid(ushort packetIdentifier, string packetTypeName)
     {
         // SUBSCRIBE, UNSUBSCRIBE, and PUBLISH(in cases where QoS > 0) Control Packets MUST contain a non-zero 16 - bit Packet Identifier[MQTT - 2.3.1 - 1].
 
         if (packetIdentifier == 0)
         {
-            throw new MqttProtocolViolationException($"Packet identifier is not set for {packet.GetType().Name}.");
+            throw new MqttProtocolViolationException($"Packet identifier is not set for {packetTypeName}.");
         }
     }
 }

@@ -23,7 +23,7 @@ public sealed class MqttServerFactory
 
     public IMqttNetLogger DefaultLogger { get; }
 
-    public IList<Func<MqttServerFactory, IMqttServerAdapter>> DefaultServerAdapters { get; } = [_ => new MqttTcpServerAdapter()];
+    public IList<Func<MqttServerFactory, MqttTcpServerAdapter>> DefaultServerAdapters { get; } = [_ => new MqttTcpServerAdapter()];
 
     public IDictionary<object, object> Properties { get; } = new Dictionary<object, object>();
 
@@ -46,30 +46,13 @@ public sealed class MqttServerFactory
     {
         ArgumentNullException.ThrowIfNull(logger);
 
-        var serverAdapters = DefaultServerAdapters.Select(a => a.Invoke(this));
-        return CreateMqttServer(options, serverAdapters, logger);
-    }
-
-    public MqttServer CreateMqttServer(MqttServerOptions options, IEnumerable<IMqttServerAdapter> serverAdapters, IMqttNetLogger logger)
-    {
-        ArgumentNullException.ThrowIfNull(serverAdapters);
-        ArgumentNullException.ThrowIfNull(logger);
-
-        return new MqttServer(options, serverAdapters, logger);
-    }
-
-    public MqttServer CreateMqttServer(MqttServerOptions options, IEnumerable<IMqttServerAdapter> serverAdapters)
-    {
-        ArgumentNullException.ThrowIfNull(serverAdapters);
-
-        return new MqttServer(options, serverAdapters, DefaultLogger);
+        return new MqttServer(options, new MqttTcpServerAdapter(), logger);
     }
 
     public MqttServerClientDisconnectOptionsBuilder CreateMqttServerClientDisconnectOptionsBuilder()
     {
         return new MqttServerClientDisconnectOptionsBuilder();
     }
-
 
     public MqttServerStopOptionsBuilder CreateMqttServerStopOptionsBuilder()
     {

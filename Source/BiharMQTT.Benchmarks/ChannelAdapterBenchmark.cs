@@ -53,7 +53,7 @@ public sealed class ChannelAdapterBenchmark : BaseBenchmark, IDisposable
             Topic = "A"
         };
 
-        var serializer = new MqttPacketFormatterAdapter(MqttProtocolVersion.V311, new MqttBufferWriter(4096, 65535));
+        var serializer = new MqttPacketFormatterAdapter(MqttProtocolVersion.V500, new MqttBufferWriter(4096, 65535));
 
         var serializedPacket = Join(serializer.Encode(_packet).Join());
 
