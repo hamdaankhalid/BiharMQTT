@@ -3,6 +3,8 @@
 // See the LICENSE file in the project root for more information.
 
 using System.Collections;
+using BiharMQTT.Formatter;
+using BiharMQTT.Formatter.V5;
 using BiharMQTT.Internal;
 using BiharMQTT.Packets;
 using BiharMQTT.Protocol;
@@ -20,6 +22,8 @@ public sealed class MqttSession : IDisposable
     readonly MqttServerOptions _serverOptions;
     readonly MqttClientSubscriptionsManager _subscriptionsManager;
 
+    readonly MqttV5PacketEncoder _encoder = new(new MqttBufferWriter(4096, 65535));
+
     // Do not use a dictionary in order to keep the ordering of the messages.
     readonly List<MqttPublishPacket> _unacknowledgedPublishPackets = new();
 
@@ -35,7 +39,7 @@ public sealed class MqttSession : IDisposable
     {
         Items = items ?? throw new ArgumentNullException(nameof(items));
 
-        _connectPacket = connectPacket ?? throw new ArgumentNullException(nameof(connectPacket));
+        _connectPacket = connectPacket;
         _serverOptions = serverOptions ?? throw new ArgumentNullException(nameof(serverOptions));
         _clientSessionsManager = clientSessionsManager ?? throw new ArgumentNullException(nameof(clientSessionsManager));
 
@@ -50,9 +54,11 @@ public sealed class MqttSession : IDisposable
 
     public bool HasSubscribedTopics => _subscribedTopics != null && _subscribedTopics.Count > 0;
 
-    public string Id => _connectPacket.ClientId;
+    static string SegmentToString(ArraySegment<byte> seg) => seg.Count == 0 ? string.Empty : System.Text.Encoding.UTF8.GetString(seg.Array!, seg.Offset, seg.Count);
 
-    public string UserName => _connectPacket.Username;
+    public string Id => SegmentToString(_connectPacket.ClientId);
+
+    public string UserName => SegmentToString(_connectPacket.Username);
 
     public IDictionary Items { get; }
 
@@ -123,15 +129,24 @@ public sealed class MqttSession : IDisposable
                 // Only drop from the data partition. Dropping from control partition might break the connection
                 // because the client does not receive PINGREQ packets etc. any longer.
                 var firstItem = _packetBus.DropFirstItem(MqttPacketBusPartition.Data);
-                if (firstItem != null)
+                if (firstItem.HasValue)
                 {
-                    firstItem.Fail(new MqttPendingMessagesOverflowException(Id, _serverOptions.PendingMessagesOverflowStrategy));
+                    var item = firstItem.Value;
+                    item.Fail(new MqttPendingMessagesOverflowException(Id, _serverOptions.PendingMessagesOverflowStrategy));
                 }
             }
         }
 
-        var publishPacket = (MqttPublishPacket)packetBusItem.Packet;
+        _packetBus.EnqueueItem(packetBusItem, MqttPacketBusPartition.Data);
+        return EnqueueDataPacketResult.Enqueued;
+    }
 
+    /// <summary>
+    ///     Encodes a publish packet, assigns a packet identifier for QoS > 0,
+    ///     tracks the packet for acknowledgement, and enqueues it.
+    /// </summary>
+    public EnqueueDataPacketResult EnqueuePublishPacket(ref MqttPublishPacket publishPacket, Action<MqttPacketBusItem> configureBusItem = null)
+    {
         if (publishPacket.QualityOfServiceLevel > MqttQualityOfServiceLevel.AtMostOnce)
         {
             publishPacket.PacketIdentifier = _packetIdentifierProvider.GetNextPacketIdentifier();
@@ -142,8 +157,11 @@ public sealed class MqttSession : IDisposable
             }
         }
 
-        _packetBus.EnqueueItem(packetBusItem, MqttPacketBusPartition.Data);
-        return EnqueueDataPacketResult.Enqueued;
+        var buffer = _encoder.Encode(ref publishPacket);
+        var busItem = new MqttPacketBusItem(buffer);
+        configureBusItem?.Invoke(busItem);
+
+        return EnqueueDataPacket(busItem);
     }
 
     public void EnqueueHealthPacket(MqttPacketBusItem packetBusItem)
@@ -194,7 +212,8 @@ public sealed class MqttSession : IDisposable
 
         foreach (var publishPacket in unacknowledgedPublishPackets)
         {
-            EnqueueDataPacket(new MqttPacketBusItem(publishPacket));
+            var pkt = publishPacket;
+            EnqueuePublishPacket(ref pkt);
         }
     }
 

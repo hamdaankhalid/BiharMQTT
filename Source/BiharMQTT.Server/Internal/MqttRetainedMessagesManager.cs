@@ -26,11 +26,6 @@ public sealed class MqttRetainedMessagesManager : IDisposable
         {
             _messages.Clear();
         }
-
-        using (await _storageAccessLock.EnterAsync().ConfigureAwait(false))
-        {
-            await _eventContainer.RetainedMessagesClearedEvent.InvokeAsync(EventArgs.Empty).ConfigureAwait(false);
-        }
     }
 
     public void Dispose()
@@ -64,20 +59,10 @@ public sealed class MqttRetainedMessagesManager : IDisposable
     {
         try
         {
-            var eventArgs = new LoadingRetainedMessagesEventArgs();
-            await _eventContainer.LoadingRetainedMessagesEvent.InvokeAsync(eventArgs).ConfigureAwait(false);
-
+            // Retained message loading event was removed; start with empty store.
             lock (_messages)
             {
                 _messages.Clear();
-
-                if (eventArgs.LoadedRetainedMessages != null)
-                {
-                    foreach (var retainedMessage in eventArgs.LoadedRetainedMessages)
-                    {
-                        _messages[retainedMessage.Topic] = retainedMessage;
-                    }
-                }
             }
         }
         catch (Exception exception)
@@ -92,18 +77,14 @@ public sealed class MqttRetainedMessagesManager : IDisposable
 
         try
         {
-            List<MqttApplicationMessage> messagesForSave = null;
-            var saveIsRequired = false;
-
             lock (_messages)
             {
-                var hasHandlers = _eventContainer.RetainedMessageChangedEvent.HasHandlers;
                 var payload = applicationMessage.Payload;
                 var hasPayload = payload.Length > 0;
 
                 if (!hasPayload)
                 {
-                    saveIsRequired = _messages.Remove(applicationMessage.Topic);
+                    _messages.Remove(applicationMessage.Topic);
                     _logger.Verbose("Client '{0}' cleared retained message for topic '{1}'.", clientId, applicationMessage.Topic);
                 }
                 else
@@ -111,35 +92,16 @@ public sealed class MqttRetainedMessagesManager : IDisposable
                     if (!_messages.TryGetValue(applicationMessage.Topic, out var existingMessage))
                     {
                         _messages[applicationMessage.Topic] = applicationMessage;
-                        saveIsRequired = true;
                     }
                     else
                     {
                         if (existingMessage.QualityOfServiceLevel != applicationMessage.QualityOfServiceLevel || !MqttMemoryHelper.SequenceEqual(existingMessage.Payload, payload))
                         {
                             _messages[applicationMessage.Topic] = applicationMessage;
-                            saveIsRequired = true;
                         }
                     }
 
                     _logger.Verbose("Client '{0}' set retained message for topic '{1}'.", clientId, applicationMessage.Topic);
-                }
-
-                if (saveIsRequired && hasHandlers)
-                {
-                    messagesForSave = new List<MqttApplicationMessage>(_messages.Values);
-                }
-            }
-
-            if (saveIsRequired)
-            {
-                if (_eventContainer.RetainedMessageChangedEvent.HasHandlers)
-                {
-                    using (await _storageAccessLock.EnterAsync().ConfigureAwait(false))
-                    {
-                        var eventArgs = new RetainedMessageChangedEventArgs(clientId, applicationMessage, messagesForSave);
-                        await _eventContainer.RetainedMessageChangedEvent.InvokeAsync(eventArgs).ConfigureAwait(false);
-                    }
                 }
             }
         }

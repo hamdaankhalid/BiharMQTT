@@ -11,6 +11,8 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
 {
     static readonly List<uint> EmptySubscriptionIdentifiers = new List<uint>();
 
+    static string SegmentToString(ArraySegment<byte> seg) => seg.Count == 0 ? string.Empty : System.Text.Encoding.UTF8.GetString(seg.Array!, seg.Offset, seg.Count);
+
     readonly Dictionary<ulong, HashSet<MqttSubscription>> _noWildcardSubscriptionsByTopicHash = new Dictionary<ulong, HashSet<MqttSubscription>>();
     readonly MqttRetainedMessagesManager _retainedMessagesManager;
 
@@ -158,7 +160,6 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
 
     public async Task<SubscribeResult> Subscribe(MqttSubscribePacket subscribePacket, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(subscribePacket);
 
         var retainedApplicationMessages = await _retainedMessagesManager.GetMessages().ConfigureAwait(false);
         var result = new SubscribeResult(subscribePacket.TopicFilters.Count);
@@ -185,14 +186,15 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
                 result.CloseConnection = true;
             }
 
-            if (!processSubscription || string.IsNullOrEmpty(topicFilter.Topic))
+            if (!processSubscription || topicFilter.Topic.Count == 0)
             {
                 continue;
             }
 
-            var createSubscriptionResult = CreateSubscription(topicFilter, subscribePacket.SubscriptionIdentifier, interceptorEventArgs.Response.ReasonCode);
+            var topicString = SegmentToString(topicFilter.Topic);
+            var createSubscriptionResult = CreateSubscription(topicFilter, topicString, subscribePacket.SubscriptionIdentifier, interceptorEventArgs.Response.ReasonCode);
 
-            addedSubscriptions.Add(topicFilter.Topic);
+            addedSubscriptions.Add(topicString);
             finalTopicFilters.Add(topicFilter);
 
             FilterRetainedApplicationMessages(retainedApplicationMessages, createSubscriptionResult, result);
@@ -207,7 +209,6 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
 
     public async Task<UnsubscribeResult> Unsubscribe(MqttUnsubscribePacket unsubscribePacket, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(unsubscribePacket);
 
         var result = new UnsubscribeResult();
 
@@ -216,8 +217,9 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
         _subscriptionsLock.EnterWriteLock();
         try
         {
-            foreach (var topicFilter in unsubscribePacket.TopicFilters)
+            foreach (var topicFilterSegment in unsubscribePacket.TopicFilters)
             {
+                var topicFilter = SegmentToString(topicFilterSegment);
                 _subscriptions.TryGetValue(topicFilter, out var existingSubscription);
 
                 var interceptorEventArgs = InterceptUnsubscribe(topicFilter, existingSubscription, unsubscribePacket.UserProperties, cancellationToken);
@@ -284,7 +286,7 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
         return result;
     }
 
-    CreateSubscriptionResult CreateSubscription(MqttTopicFilter topicFilter, uint subscriptionIdentifier, MqttSubscribeReasonCode reasonCode)
+    CreateSubscriptionResult CreateSubscription(MqttTopicFilter topicFilter, string topicString, uint subscriptionIdentifier, MqttSubscribeReasonCode reasonCode)
     {
         MqttQualityOfServiceLevel grantedQualityOfServiceLevel;
 
@@ -306,7 +308,7 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
         }
 
         var subscription = new MqttSubscription(
-            topicFilter.Topic,
+            topicString,
             topicFilter.NoLocal,
             topicFilter.RetainHandling,
             topicFilter.RetainAsPublished,
@@ -320,9 +322,9 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
         _subscriptionsLock.EnterWriteLock();
         try
         {
-            MqttTopicHash.Calculate(topicFilter.Topic, out var topicHash, out _, out var hasWildcard);
+            MqttTopicHash.Calculate(topicString, out var topicHash, out _, out var hasWildcard);
 
-            if (_subscriptions.TryGetValue(topicFilter.Topic, out var existingSubscription))
+            if (_subscriptions.TryGetValue(topicString, out var existingSubscription))
             {
                 // must remove object from topic hash dictionary first
                 if (hasWildcard)
@@ -344,7 +346,7 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
             }
 
             isNewSubscription = existingSubscription == null;
-            _subscriptions[topicFilter.Topic] = subscription;
+            _subscriptions[topicString] = subscription;
 
             // Add or re-add to topic hash dictionary
             if (hasWildcard)
@@ -454,7 +456,8 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
             eventArgs.Response.ReasonCode = MqttSubscribeReasonCode.GrantedQoS2;
         }
 
-        if (topicFilter.Topic.StartsWith("$share/", StringComparison.InvariantCulture))
+        var topicString = SegmentToString(topicFilter.Topic);
+        if (topicString.StartsWith("$share/", StringComparison.InvariantCulture))
         {
             eventArgs.Response.ReasonCode = MqttSubscribeReasonCode.SharedSubscriptionsNotSupported;
         }

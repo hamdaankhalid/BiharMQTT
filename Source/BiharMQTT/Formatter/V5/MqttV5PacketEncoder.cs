@@ -17,52 +17,52 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
     readonly MqttBufferWriter _bufferWriter = bufferWriter ?? throw new ArgumentNullException(nameof(bufferWriter));
     readonly MqttV5PropertiesWriter _propertiesWriter = new(new MqttBufferWriter(1024, 4096));
 
-    public MqttPacketBuffer Encode(MqttConnectPacket packet)
+    public MqttPacketBuffer Encode(ref MqttConnectPacket packet)
     {
         BeginEncode();
-        var fixedHeader = EncodeConnectPacket(packet);
+        var fixedHeader = EncodeConnectPacket(ref packet);
         return FinalizePacket(fixedHeader);
     }
 
-    public MqttPacketBuffer Encode(MqttConnAckPacket packet)
+    public MqttPacketBuffer Encode(ref MqttConnAckPacket packet)
     {
         BeginEncode();
-        var fixedHeader = EncodeConnAckPacket(packet);
+        var fixedHeader = EncodeConnAckPacket(ref packet);
         return FinalizePacket(fixedHeader);
     }
 
-    public MqttPacketBuffer Encode(MqttDisconnectPacket packet)
+    public MqttPacketBuffer Encode(ref MqttDisconnectPacket packet)
     {
         BeginEncode();
-        var fixedHeader = EncodeDisconnectPacket(packet);
+        var fixedHeader = EncodeDisconnectPacket(ref packet);
         return FinalizePacket(fixedHeader);
     }
 
-    public MqttPacketBuffer Encode(MqttPublishPacket packet)
+    public MqttPacketBuffer Encode(ref MqttPublishPacket packet)
     {
         BeginEncode();
-        var fixedHeader = EncodePublishPacket(packet);
+        var fixedHeader = EncodePublishPacket(ref packet);
         return FinalizePacket(fixedHeader, packet.Payload);
     }
 
-    public MqttPacketBuffer Encode(MqttPubAckPacket packet)
+    public MqttPacketBuffer Encode(ref MqttPubAckPacket packet)
     {
         BeginEncode();
-        var fixedHeader = EncodePubAckPacket(packet);
+        var fixedHeader = EncodePubAckPacket(ref packet);
         return FinalizePacket(fixedHeader);
     }
 
-    public MqttPacketBuffer Encode(MqttPubRecPacket packet)
+    public MqttPacketBuffer Encode(ref MqttPubRecPacket packet)
     {
         BeginEncode();
-        var fixedHeader = EncodePubRecPacket(packet);
+        var fixedHeader = EncodePubRecPacket(ref packet);
         return FinalizePacket(fixedHeader);
     }
 
-    public MqttPacketBuffer Encode(MqttPubRelPacket packet)
+    public MqttPacketBuffer Encode(ref MqttPubRelPacket packet)
     {
         BeginEncode();
-        var fixedHeader = EncodePubRelPacket(packet);
+        var fixedHeader = EncodePubRelPacket(ref packet);
         return FinalizePacket(fixedHeader);
     }
 
@@ -73,38 +73,38 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
         return FinalizePacket(fixedHeader);
     }
 
-    public MqttPacketBuffer Encode(MqttSubscribePacket packet)
+    public MqttPacketBuffer Encode(ref MqttSubscribePacket packet)
     {
         BeginEncode();
-        var fixedHeader = EncodeSubscribePacket(packet);
+        var fixedHeader = EncodeSubscribePacket(ref packet);
         return FinalizePacket(fixedHeader);
     }
 
     public MqttPacketBuffer Encode(ref MqttSubAckPacket packet)
     {
         BeginEncode();
-        var fixedHeader = EncodeSubAckPacket(packet);
+        var fixedHeader = EncodeSubAckPacket(ref packet);
         return FinalizePacket(fixedHeader);
     }
 
-    public MqttPacketBuffer Encode(MqttUnsubscribePacket packet)
+    public MqttPacketBuffer Encode(ref MqttUnsubscribePacket packet)
     {
         BeginEncode();
-        var fixedHeader = EncodeUnsubscribePacket(packet);
+        var fixedHeader = EncodeUnsubscribePacket(ref packet);
         return FinalizePacket(fixedHeader);
     }
 
-    public MqttPacketBuffer Encode(MqttUnsubAckPacket packet)
+    public MqttPacketBuffer Encode(ref MqttUnsubAckPacket packet)
     {
         BeginEncode();
-        var fixedHeader = EncodeUnsubAckPacket(packet);
+        var fixedHeader = EncodeUnsubAckPacket(ref packet);
         return FinalizePacket(fixedHeader);
     }
 
-    public MqttPacketBuffer Encode(MqttAuthPacket packet)
+    public MqttPacketBuffer Encode(ref MqttAuthPacket packet)
     {
         BeginEncode();
-        var fixedHeader = EncodeAuthPacket(packet);
+        var fixedHeader = EncodeAuthPacket(ref packet);
         return FinalizePacket(fixedHeader);
     }
 
@@ -148,7 +148,7 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
         return payload.Length > 0 ? new MqttPacketBuffer(firstSegment, payload) : new MqttPacketBuffer(firstSegment);
     }
 
-    byte EncodeAuthPacket(MqttAuthPacket packet)
+    byte EncodeAuthPacket(ref MqttAuthPacket packet)
     {
         _propertiesWriter.WriteAuthenticationMethod(packet.AuthenticationMethod);
         _propertiesWriter.WriteAuthenticationData(packet.AuthenticationData);
@@ -170,7 +170,7 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
         return MqttBufferWriter.BuildFixedHeader(MqttControlPacketType.Auth);
     }
 
-    byte EncodeConnAckPacket(MqttConnAckPacket packet)
+    byte EncodeConnAckPacket(ref MqttConnAckPacket packet)
     {
         byte connectAcknowledgeFlags = 0x0;
         if (packet.IsSessionPresent)
@@ -205,7 +205,7 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
         return MqttBufferWriter.BuildFixedHeader(MqttControlPacketType.ConnAck);
     }
 
-    byte EncodeConnectPacket(MqttConnectPacket packet)
+    byte EncodeConnectPacket(ref MqttConnectPacket packet)
     {
         if (packet.ClientId.Count == 0 && !packet.CleanSession)
         {
@@ -295,7 +295,7 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
         return MqttBufferWriter.BuildFixedHeader(MqttControlPacketType.Connect);
     }
 
-    byte EncodeDisconnectPacket(MqttDisconnectPacket packet)
+    byte EncodeDisconnectPacket(ref MqttDisconnectPacket packet)
     {
         _bufferWriter.WriteByte((byte)packet.ReasonCode);
 
@@ -320,7 +320,7 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
         return MqttBufferWriter.BuildFixedHeader(MqttControlPacketType.PingResp);
     }
 
-    byte EncodePubAckPacket(MqttPubAckPacket packet)
+    byte EncodePubAckPacket(ref MqttPubAckPacket packet)
     {
         if (packet.PacketIdentifier == 0)
         {
@@ -361,7 +361,7 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
         return MqttBufferWriter.BuildFixedHeader(MqttControlPacketType.PubComp);
     }
 
-    byte EncodePublishPacket(MqttPublishPacket packet)
+    byte EncodePublishPacket(ref MqttPublishPacket packet)
     {
         if (packet.QualityOfServiceLevel == 0 && packet.Dup)
         {
@@ -419,7 +419,7 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
         return MqttBufferWriter.BuildFixedHeader(MqttControlPacketType.Publish, fixedHeader);
     }
 
-    byte EncodePubRecPacket(MqttPubRecPacket packet)
+    byte EncodePubRecPacket(ref MqttPubRecPacket packet)
     {
         ThrowIfPacketIdentifierIsInvalid(packet.PacketIdentifier, nameof(MqttPubRecPacket));
 
@@ -438,7 +438,7 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
         return MqttBufferWriter.BuildFixedHeader(MqttControlPacketType.PubRec);
     }
 
-    byte EncodePubRelPacket(MqttPubRelPacket packet)
+    byte EncodePubRelPacket(ref MqttPubRelPacket packet)
     {
         ThrowIfPacketIdentifierIsInvalid(packet.PacketIdentifier, nameof(MqttPubRelPacket));
 
@@ -457,7 +457,7 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
         return MqttBufferWriter.BuildFixedHeader(MqttControlPacketType.PubRel, 0x02);
     }
 
-    byte EncodeSubAckPacket(MqttSubAckPacket packet)
+    byte EncodeSubAckPacket(ref MqttSubAckPacket packet)
     {
         if (packet.ReasonCodes?.Count == 0)
         {
@@ -482,7 +482,7 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
         return MqttBufferWriter.BuildFixedHeader(MqttControlPacketType.SubAck);
     }
 
-    byte EncodeSubscribePacket(MqttSubscribePacket packet)
+    byte EncodeSubscribePacket(ref MqttSubscribePacket packet)
     {
         if (packet.TopicFilters?.Count == 0)
         {
@@ -533,7 +533,7 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
         return MqttBufferWriter.BuildFixedHeader(MqttControlPacketType.Subscribe, 0x02);
     }
 
-    byte EncodeUnsubAckPacket(MqttUnsubAckPacket packet)
+    byte EncodeUnsubAckPacket(ref MqttUnsubAckPacket packet)
     {
         ThrowIfPacketIdentifierIsInvalid(packet.PacketIdentifier, nameof(MqttUnsubAckPacket));
 
@@ -553,7 +553,7 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
         return MqttBufferWriter.BuildFixedHeader(MqttControlPacketType.UnsubAck);
     }
 
-    byte EncodeUnsubscribePacket(MqttUnsubscribePacket packet)
+    byte EncodeUnsubscribePacket(ref MqttUnsubscribePacket packet)
     {
         if (packet.TopicFilters?.Count == 0)
         {

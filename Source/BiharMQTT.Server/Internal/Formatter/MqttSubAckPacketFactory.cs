@@ -8,16 +8,17 @@ namespace BiharMQTT.Server.Internal.Formatter;
 
 public static class MqttSubAckPacketFactory
 {
+    static ArraySegment<byte> ToSegment(string s) => s == null ? default : new ArraySegment<byte>(System.Text.Encoding.UTF8.GetBytes(s));
+
     public static MqttSubAckPacket Create(MqttSubscribePacket subscribePacket, SubscribeResult subscribeResult)
     {
-        ArgumentNullException.ThrowIfNull(subscribePacket);
         ArgumentNullException.ThrowIfNull(subscribeResult);
 
         var subAckPacket = new MqttSubAckPacket
         {
             PacketIdentifier = subscribePacket.PacketIdentifier,
             ReasonCodes = subscribeResult.ReasonCodes,
-            ReasonString = subscribeResult.ReasonString,
+            ReasonString = ToSegment(subscribeResult.ReasonString),
             UserProperties = subscribeResult.UserProperties
         };
 

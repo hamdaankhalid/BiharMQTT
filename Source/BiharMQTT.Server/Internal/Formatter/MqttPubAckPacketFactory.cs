@@ -9,16 +9,17 @@ namespace BiharMQTT.Server.Internal.Formatter;
 
 public static class MqttPubAckPacketFactory
 {
+    static ArraySegment<byte> ToSegment(string s) => s == null ? default : new ArraySegment<byte>(System.Text.Encoding.UTF8.GetBytes(s));
+
     public static MqttPubAckPacket Create(MqttPublishPacket publishPacket, DispatchApplicationMessageResult dispatchApplicationMessageResult)
     {
-        ArgumentNullException.ThrowIfNull(publishPacket);
         ArgumentNullException.ThrowIfNull(dispatchApplicationMessageResult);
 
         var pubAckPacket = new MqttPubAckPacket
         {
             PacketIdentifier = publishPacket.PacketIdentifier,
             ReasonCode = (MqttPubAckReasonCode)dispatchApplicationMessageResult.ReasonCode,
-            ReasonString = dispatchApplicationMessageResult.ReasonString,
+            ReasonString = ToSegment(dispatchApplicationMessageResult.ReasonString),
             UserProperties = dispatchApplicationMessageResult.UserProperties
         };
 

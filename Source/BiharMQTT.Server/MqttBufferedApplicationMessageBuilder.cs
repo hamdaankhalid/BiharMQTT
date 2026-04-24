@@ -129,17 +129,19 @@ public sealed class MqttBufferedApplicationMessageBuilder
         return this;
     }
 
+    static ArraySegment<byte> ToSegment(string s) => s == null ? default : new ArraySegment<byte>(System.Text.Encoding.UTF8.GetBytes(s));
+
     public MqttBufferedApplicationMessageBuilder WithUserProperty(string name, ReadOnlyMemory<byte> value)
     {
         _userProperties ??= [];
-        _userProperties.Add(new MqttUserProperty(name, value));
+        _userProperties.Add(new MqttUserProperty(ToSegment(name), new ArraySegment<byte>(value.ToArray())));
         return this;
     }
 
     public MqttBufferedApplicationMessageBuilder WithUserProperty(string name, ArraySegment<byte> value)
     {
         _userProperties ??= [];
-        _userProperties.Add(new MqttUserProperty(name, value));
+        _userProperties.Add(new MqttUserProperty(ToSegment(name), value));
         return this;
     }
 }

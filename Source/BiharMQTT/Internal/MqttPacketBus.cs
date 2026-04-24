@@ -124,8 +124,6 @@ public sealed class MqttPacketBus : IDisposable
 
     public void EnqueueItem(MqttPacketBusItem item, MqttPacketBusPartition partition)
     {
-        ArgumentNullException.ThrowIfNull(item);
-
         lock (_syncRoot)
         {
             _partitions[(int)partition].AddLast(item);

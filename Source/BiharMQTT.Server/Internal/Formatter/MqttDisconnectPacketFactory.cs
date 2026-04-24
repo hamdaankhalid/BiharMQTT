@@ -13,10 +13,12 @@ public static class MqttDisconnectPacketFactory
     {
         ReasonCode = MqttDisconnectReasonCode.NormalDisconnection,
         UserProperties = null,
-        ReasonString = null,
-        ServerReference = null,
+        ReasonString = default,
+        ServerReference = default,
         SessionExpiryInterval = 0
     };
+
+    static ArraySegment<byte> ToSegment(string s) => s == null ? default : new ArraySegment<byte>(System.Text.Encoding.UTF8.GetBytes(s));
 
     public static MqttDisconnectPacket Create(MqttServerClientDisconnectOptions clientDisconnectOptions)
     {
@@ -29,8 +31,8 @@ public static class MqttDisconnectPacketFactory
         {
             ReasonCode = clientDisconnectOptions.ReasonCode,
             UserProperties = clientDisconnectOptions.UserProperties,
-            ReasonString = clientDisconnectOptions.ReasonString,
-            ServerReference = clientDisconnectOptions.ServerReference,
+            ReasonString = ToSegment(clientDisconnectOptions.ReasonString),
+            ServerReference = ToSegment(clientDisconnectOptions.ServerReference),
             SessionExpiryInterval = 0 // TODO: Not yet supported!
         };
     }

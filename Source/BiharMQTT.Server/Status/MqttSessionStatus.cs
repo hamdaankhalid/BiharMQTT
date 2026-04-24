@@ -53,10 +53,7 @@ public sealed class MqttSessionStatus
         ArgumentNullException.ThrowIfNull(applicationMessage);
 
         var publishPacket = MqttPublishPacketFactory.Create(applicationMessage);
-        var packetBusItem = new MqttPacketBusItem(publishPacket);
-        _session.EnqueueDataPacket(packetBusItem);
-
-        await packetBusItem.WaitAsync().ConfigureAwait(false);
+        _session.EnqueuePublishPacket(ref publishPacket);
 
         var injectResult = new InjectMqttApplicationMessageResult
         {
@@ -76,14 +73,14 @@ public sealed class MqttSessionStatus
     /// When <see cref="MqttServerOptions.PendingMessagesOverflowStrategy"/> is set to <see cref="MqttPendingMessagesOverflowStrategy.DropOldestQueuedMessage"/>,
     /// this method always returns <c>true</c>.
     /// However, an existing message in the queue may be <b>dropped later</b> to make room for the newly enqueued message.
-    /// Such dropped messages can be tracked by subscribing to <see cref="MqttServer.QueuedApplicationMessageOverwrittenAsync"/> event.
+    /// Such dropped messages can be tracked by subscribing to the queued application message overwritten event.
     /// </remarks>
     public bool TryEnqueueApplicationMessage(MqttApplicationMessage applicationMessage, out InjectMqttApplicationMessageResult injectResult)
     {
         ArgumentNullException.ThrowIfNull(applicationMessage);
 
         var publishPacket = MqttPublishPacketFactory.Create(applicationMessage);
-        var enqueueDataPacketResult = _session.EnqueueDataPacket(new MqttPacketBusItem(publishPacket));
+        var enqueueDataPacketResult = _session.EnqueuePublishPacket(ref publishPacket);
 
         if (enqueueDataPacketResult != EnqueueDataPacketResult.Enqueued)
         {

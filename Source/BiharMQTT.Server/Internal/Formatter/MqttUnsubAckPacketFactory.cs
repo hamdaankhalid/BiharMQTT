@@ -10,7 +10,6 @@ public static class MqttUnsubAckPacketFactory
 {
     public static MqttUnsubAckPacket Create(MqttUnsubscribePacket unsubscribePacket, UnsubscribeResult unsubscribeResult)
     {
-        ArgumentNullException.ThrowIfNull(unsubscribePacket);
         ArgumentNullException.ThrowIfNull(unsubscribeResult);
 
         var unsubAckPacket = new MqttUnsubAckPacket

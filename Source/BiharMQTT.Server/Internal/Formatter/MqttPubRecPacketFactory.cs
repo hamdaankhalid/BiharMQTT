@@ -9,15 +9,15 @@ namespace BiharMQTT.Server.Internal.Formatter;
 
 public static class MqttPubRecPacketFactory
 {
+    static ArraySegment<byte> ToSegment(string s) => s == null ? default : new ArraySegment<byte>(System.Text.Encoding.UTF8.GetBytes(s));
+
     public static MqttPubRecPacket Create(MqttPublishPacket publishPacket, DispatchApplicationMessageResult dispatchApplicationMessageResult)
     {
-        ArgumentNullException.ThrowIfNull(publishPacket);
-
         var pubRecPacket = new MqttPubRecPacket
         {
             PacketIdentifier = publishPacket.PacketIdentifier,
             ReasonCode = (MqttPubRecReasonCode)dispatchApplicationMessageResult.ReasonCode,
-            ReasonString = dispatchApplicationMessageResult.ReasonString,
+            ReasonString = ToSegment(dispatchApplicationMessageResult.ReasonString),
             UserProperties = dispatchApplicationMessageResult.UserProperties
         };
 

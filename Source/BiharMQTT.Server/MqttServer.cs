@@ -239,7 +239,8 @@ public class MqttServer : Disposable
 
         foreach (var topicFilter in topicFilters)
         {
-            MqttTopicValidator.ThrowIfInvalidSubscribe(topicFilter.Topic);
+            var topicString = topicFilter.Topic.Count == 0 ? string.Empty : System.Text.Encoding.UTF8.GetString(topicFilter.Topic.Array!, topicFilter.Topic.Offset, topicFilter.Topic.Count);
+            MqttTopicValidator.ThrowIfInvalidSubscribe(topicString);
         }
 
         ThrowIfDisposed();

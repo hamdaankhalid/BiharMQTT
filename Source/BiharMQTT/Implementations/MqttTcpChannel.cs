@@ -13,7 +13,7 @@ namespace BiharMQTT.Implementations;
 public sealed class MqttTcpChannel
 {
     Socket _socket;
-    Stream _stream;
+    SslStream _stream;
 
     /// <summary>
     /// Server-side constructor. The channel takes ownership of both socket and stream.

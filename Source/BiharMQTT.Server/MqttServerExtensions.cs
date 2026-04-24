@@ -91,7 +91,7 @@ public static class MqttServerExtensions
         ArgumentNullException.ThrowIfNull(clientId);
         ArgumentNullException.ThrowIfNull(topic);
 
-        var topicFilters = new MqttTopicFilterBuilder().WithTopic(topic).Build();
-        return server.SubscribeAsync(clientId, topicFilters);
+        var topicFilter = new MqttTopicFilter { Topic = new ArraySegment<byte>(System.Text.Encoding.UTF8.GetBytes(topic)) };
+        return server.SubscribeAsync(clientId, new[] { topicFilter });
     }
 }

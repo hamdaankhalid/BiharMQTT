@@ -57,7 +57,9 @@ public sealed class MqttConnectedClient : IDisposable
 
     public MqttDisconnectPacket? DisconnectPacket { get; private set; }
 
-    public string Id => ConnectPacket.ClientId;
+    static string SegmentToString(ArraySegment<byte> seg) => seg.Count == 0 ? string.Empty : System.Text.Encoding.UTF8.GetString(seg.Array!, seg.Offset, seg.Count);
+
+    public string Id => SegmentToString(ConnectPacket.ClientId);
 
     public bool IsRunning { get; private set; }
 
@@ -69,7 +71,7 @@ public sealed class MqttConnectedClient : IDisposable
 
     public MqttClientStatistics Statistics { get; } = new();
 
-    public string UserName => ConnectPacket.Username;
+    public string UserName => SegmentToString(ConnectPacket.Username);
 
     public void Dispose()
     {
@@ -188,7 +190,7 @@ public sealed class MqttConnectedClient : IDisposable
         // When the ring buffer fast-path is available and the message is not
         // retained, dispatch directly from the MqttPublishPacket — this skips
         // the MqttApplicationMessage allocation entirely.
-        if (!publishPacket.Retain && _sessionsManager.IsRingBufferFastPathAvailable)
+        if (!publishPacket.Retain)
         {
             dispatchApplicationMessageResult =
                 await _sessionsManager.DispatchPublishPacketDirect(Id, publishPacket, cancellationToken).ConfigureAwait(false);

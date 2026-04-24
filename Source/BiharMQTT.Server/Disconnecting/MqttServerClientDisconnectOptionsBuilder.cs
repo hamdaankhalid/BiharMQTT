@@ -40,6 +40,8 @@ public sealed class MqttServerClientDisconnectOptionsBuilder
         return this;
     }
 
+    static ArraySegment<byte> ToSegment(string s) => s == null ? default : new ArraySegment<byte>(System.Text.Encoding.UTF8.GetBytes(s));
+
     [Obsolete("Please use more performance `WithUserProperty` with ArraySegment<byte> or ReadOnlyMemory<byte> for the value.")]
     public MqttServerClientDisconnectOptionsBuilder WithUserProperty(string name, string value)
     {
@@ -48,7 +50,7 @@ public sealed class MqttServerClientDisconnectOptionsBuilder
             _options.UserProperties = new List<MqttUserProperty>();
         }
 
-        _options.UserProperties.Add(new MqttUserProperty(name, value));
+        _options.UserProperties.Add(new MqttUserProperty(ToSegment(name), ToSegment(value)));
         return this;
     }
 
@@ -59,7 +61,7 @@ public sealed class MqttServerClientDisconnectOptionsBuilder
             _options.UserProperties = new List<MqttUserProperty>();
         }
 
-        _options.UserProperties.Add(new MqttUserProperty(name, value));
+        _options.UserProperties.Add(new MqttUserProperty(ToSegment(name), new ArraySegment<byte>(value.ToArray())));
         return this;
     }
 
@@ -70,7 +72,7 @@ public sealed class MqttServerClientDisconnectOptionsBuilder
             _options.UserProperties = new List<MqttUserProperty>();
         }
 
-        _options.UserProperties.Add(new MqttUserProperty(name, value));
+        _options.UserProperties.Add(new MqttUserProperty(ToSegment(name), value));
         return this;
     }
 }

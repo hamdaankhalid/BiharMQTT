@@ -1,30 +1,31 @@
+using System.Text;
 using BiharMQTT.Packets;
 
 namespace BiharMQTT.Server.EnhancedAuthentication;
 
 public static class ExchangeEnhancedAuthenticationResultFactory
 {
+    static string SegmentToString(ArraySegment<byte> seg) => seg.Count == 0 ? string.Empty : Encoding.UTF8.GetString(seg.Array!, seg.Offset, seg.Count);
+
+    static byte[] SegmentToByteArray(ArraySegment<byte> seg) => seg.Count == 0 ? null : seg.ToArray();
+
     public static ExchangeEnhancedAuthenticationResult Create(MqttAuthPacket authPacket)
     {
-        ArgumentNullException.ThrowIfNull(authPacket);
-
         return new ExchangeEnhancedAuthenticationResult
         {
-            AuthenticationData = authPacket.AuthenticationData,
+            AuthenticationData = SegmentToByteArray(authPacket.AuthenticationData),
 
-            ReasonString = authPacket.ReasonString,
+            ReasonString = SegmentToString(authPacket.ReasonString),
             UserProperties = authPacket.UserProperties
         };
     }
 
     public static ExchangeEnhancedAuthenticationResult Create(MqttDisconnectPacket disconnectPacket)
     {
-        ArgumentNullException.ThrowIfNull(disconnectPacket);
-
         return new ExchangeEnhancedAuthenticationResult
         {
             AuthenticationData = null,
-            ReasonString = disconnectPacket.ReasonString,
+            ReasonString = SegmentToString(disconnectPacket.ReasonString),
             UserProperties = disconnectPacket.UserProperties
 
             // SessionExpiryInterval makes no sense because the connection is not yet made!
