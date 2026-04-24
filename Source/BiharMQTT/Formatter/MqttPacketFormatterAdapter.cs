@@ -13,6 +13,9 @@ namespace BiharMQTT.Formatter;
 
 public sealed class MqttPacketFormatterAdapter
 {
+
+    public static ReadOnlySpan<byte> MqttPrefix => "MQTT"u8;
+
     readonly MqttBufferReader _bufferReader = new();
     readonly MqttBufferWriter _bufferWriter;
 
@@ -30,14 +33,6 @@ public sealed class MqttPacketFormatterAdapter
     }
 
     public MqttProtocolVersion ProtocolVersion { get; private set; } = MqttProtocolVersion.Unknown;
-
-    /// <summary>
-    ///     When <c>true</c>, PUBLISH payload decode returns a zero-copy slice of the
-    ///     body buffer instead of allocating and copying.  Only safe when the caller
-    ///     guarantees the body buffer outlives the decoded payload reference (e.g. the
-    ///     server ring buffer path copies the payload before the next packet is read).
-    /// </summary>
-    public bool UseZeroCopyPayloadDecode { get; set; }
 
     public void Cleanup()
     {
@@ -89,15 +84,13 @@ public sealed class MqttPacketFormatterAdapter
 
         _bufferReader.SetBuffer(receivedMqttPacket.Body.Array, receivedMqttPacket.Body.Offset, receivedMqttPacket.Body.Count);
 
-        var protocolName = _bufferReader.ReadString();
-        var protocolLevel = _bufferReader.ReadByte();
-
-        // Remove the mosquitto try_private flag (MQTT 3.1.1 Bridge).
-        // This flag is accepted but not yet used.
-        protocolLevel &= 0x7F;
-
-        if (protocolName == "MQTT")
+        if (_bufferReader.PeekEqualsSequence(MqttPrefix, advanceOnMatch: true))
         {
+            var protocolLevel = _bufferReader.ReadByte();
+
+            // Remove the mosquitto try_private flag (MQTT 3.1.1 Bridge).
+            // This flag is accepted but not yet used.
+            protocolLevel &= 0x7F;
             if (protocolLevel == 5)
             {
                 return MqttProtocolVersion.V500;
@@ -111,17 +104,7 @@ public sealed class MqttPacketFormatterAdapter
             throw new MqttProtocolViolationException($"Protocol level '{protocolLevel}' not supported.");
         }
 
-        if (protocolName == "MQIsdp")
-        {
-            if (protocolLevel == 3)
-            {
-                return MqttProtocolVersion.V310;
-            }
-
-            throw new MqttProtocolViolationException($"Protocol level '{protocolLevel}' not supported.");
-        }
-
-        throw new MqttProtocolViolationException($"Protocol '{protocolName}' not supported.");
+        throw new MqttProtocolViolationException($"Protocol not supported. F-off");
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -142,23 +125,5 @@ public sealed class MqttPacketFormatterAdapter
 
         ProtocolVersion = protocolVersion;
         _formatter = GetMqttPacketFormatter(protocolVersion, _bufferWriter);
-
-        if (UseZeroCopyPayloadDecode)
-        {
-            ApplyZeroCopyFlag(_formatter);
-        }
-    }
-
-    static void ApplyZeroCopyFlag(IMqttPacketFormatter formatter)
-    {
-        switch (formatter)
-        {
-            case MqttV3PacketFormatter v3:
-                v3.BufferReader.UseZeroCopySlice = true;
-                break;
-            case MqttV5PacketFormatter v5:
-                v5.Decoder.BufferReader.UseZeroCopySlice = true;
-                break;
-        }
     }
 }

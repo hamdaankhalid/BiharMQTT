@@ -93,23 +93,34 @@ public sealed class MqttBufferReader
     }
 
 
-    public bool PeekEqualsSequence(ReadOnlySpan<byte> str, out int bytesToSkip)
+    public bool PeekEqualsSequence(ReadOnlySpan<byte> str, bool advanceOnMatch = false)
     {
         var stringLength = ReadTwoByteInteger();
 
         if (stringLength == 0)
         {
-            bytesToSkip = 2;
-            _position -= 2; // Reset to before the length prefix
+            if (str.Length == 0 && advanceOnMatch)
+            {
+                return true;
+            }
+
+            _position -= 2;
             return str.Length == 0;
         }
 
         ValidateReceiveBuffer(stringLength);
-        bool res = _buffer.AsSpan(_position, stringLength).SequenceEqual(str);
+        bool match = _buffer.AsSpan(_position, stringLength).SequenceEqual(str);
 
-        _position -= 2; // Reset to before the length prefix
-        bytesToSkip = 2 + stringLength; // Total bytes: length prefix + string data
-        return res;
+        if (match && advanceOnMatch)
+        {
+            _position += stringLength;
+        }
+        else
+        {
+            _position -= 2;
+        }
+
+        return match;
     }
 
     /// <summary>
@@ -151,28 +162,6 @@ public sealed class MqttBufferReader
         _position += length;
         return segment;
     }
-
-    /// <summary>
-    ///     Advances position past the next length-prefixed string without reading it.
-    /// </summary>
-    public void SkipString()
-    {
-        var length = ReadTwoByteInteger();
-        if (length > 0)
-        {
-            ValidateReceiveBuffer(length);
-            _position += length;
-        }
-    }
-
-    /// <summary>
-    ///     Advances position past the next length-prefixed binary data without reading it.
-    /// </summary>
-    public void SkipBinaryData()
-    {
-        SkipString(); // Same wire format: 2-byte length prefix + data
-    }
-
 
     public string ReadString()
     {
