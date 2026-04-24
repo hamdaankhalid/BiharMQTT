@@ -93,25 +93,25 @@ public sealed class MqttBufferReader
     }
 
 
-    public bool PeekEqualsSequence(ReadOnlySpan<byte> str, bool advanceOnMatch = false)
+    public bool PeekEqualsSequence(ReadOnlySpan<byte> str)
     {
         var stringLength = ReadTwoByteInteger();
 
         if (stringLength == 0)
         {
-            if (str.Length == 0 && advanceOnMatch)
+            if (str.Length == 0)
             {
                 return true;
             }
 
             _position -= 2;
-            return str.Length == 0;
+            return false;
         }
 
         ValidateReceiveBuffer(stringLength);
         bool match = _buffer.AsSpan(_position, stringLength).SequenceEqual(str);
 
-        if (match && advanceOnMatch)
+        if (match)
         {
             _position += stringLength;
         }

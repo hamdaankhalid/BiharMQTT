@@ -163,8 +163,8 @@ public sealed class MqttV3PacketFormatter : IMqttPacketFormatter
 
         _bufferReader.SetBuffer(body.Array, body.Offset, body.Count);
 
-        if (!_bufferReader.PeekEqualsSequence(MqttProtocolName, advanceOnMatch: true) &&
-            !_bufferReader.PeekEqualsSequence(MqIsdpProtocolName, advanceOnMatch: true))
+        if (!_bufferReader.PeekEqualsSequence(MqttProtocolName) &&
+            !_bufferReader.PeekEqualsSequence(MqIsdpProtocolName))
         {
             throw new MqttProtocolViolationException("MQTT protocol name do not match MQTT v3.");
         }

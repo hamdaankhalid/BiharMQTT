@@ -84,7 +84,7 @@ public sealed class MqttPacketFormatterAdapter
 
         _bufferReader.SetBuffer(receivedMqttPacket.Body.Array, receivedMqttPacket.Body.Offset, receivedMqttPacket.Body.Count);
 
-        if (_bufferReader.PeekEqualsSequence(MqttPrefix, advanceOnMatch: true))
+        if (_bufferReader.PeekEqualsSequence(MqttPrefix))
         {
             var protocolLevel = _bufferReader.ReadByte();
 
