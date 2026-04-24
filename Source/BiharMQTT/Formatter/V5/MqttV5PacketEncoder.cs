@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information.
 
 using System.Buffers;
+using System.Security.Cryptography;
 using BiharMQTT.Exceptions;
 using BiharMQTT.Packets;
 using BiharMQTT.Protocol;
@@ -65,10 +66,10 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
         return FinalizePacket(fixedHeader);
     }
 
-    public MqttPacketBuffer Encode(MqttPubCompPacket packet)
+    public MqttPacketBuffer Encode(ref MqttPubCompPacket packet)
     {
         BeginEncode();
-        var fixedHeader = EncodePubCompPacket(packet);
+        var fixedHeader = EncodePubCompPacket(ref packet);
         return FinalizePacket(fixedHeader);
     }
 
@@ -79,7 +80,7 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
         return FinalizePacket(fixedHeader);
     }
 
-    public MqttPacketBuffer Encode(MqttSubAckPacket packet)
+    public MqttPacketBuffer Encode(ref MqttSubAckPacket packet)
     {
         BeginEncode();
         var fixedHeader = EncodeSubAckPacket(packet);
@@ -341,7 +342,7 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
         return MqttBufferWriter.BuildFixedHeader(MqttControlPacketType.PubAck);
     }
 
-    byte EncodePubCompPacket(MqttPubCompPacket packet)
+    byte EncodePubCompPacket(ref MqttPubCompPacket packet)
     {
         ThrowIfPacketIdentifierIsInvalid(packet.PacketIdentifier, nameof(MqttPubCompPacket));
 

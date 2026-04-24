@@ -60,77 +60,13 @@ public sealed class MqttChannelAdapter : Disposable
 
     public MqttPacketFormatterAdapter PacketFormatterAdapter { get; }
 
-    public async Task ConnectAsync(CancellationToken cancellationToken)
+    public Task DisconnectAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ThrowIfDisposed();
 
-        try
-        {
-            /*
-             * We have to implement a small workaround here to support connecting in Xamarin
-             * with a disabled WiFi network. If the WiFi is disabled the connect method will
-             * block forever. Even a cancellation token is not supported properly.
-             */
-
-            var timeout = new TaskCompletionSource<object>();
-            await using (cancellationToken.Register(() => timeout.TrySetResult(null)))
-            {
-                var connectTask = Task.Run(
-                    async () =>
-                    {
-                        try
-                        {
-                            await _channel.ConnectAsync(cancellationToken).ConfigureAwait(false);
-                        }
-                        catch
-                        {
-                            // If the timeout is already reached the exception is no longer of interest and
-                            // must be catched. Otherwise it will arrive at the TaskScheduler.UnobservedTaskException.
-                            if (!timeout.Task.IsCompleted)
-                            {
-                                throw;
-                            }
-                        }
-                    },
-                    CancellationToken.None);
-
-                await Task.WhenAny(connectTask, timeout.Task).ConfigureAwait(false);
-
-                if (timeout.Task.IsCompleted && !connectTask.IsCompleted)
-                {
-                    throw new OperationCanceledException("MQTT connect canceled.", cancellationToken);
-                }
-
-                // Make sure that the exception from the connect task gets thrown.
-                await connectTask.ConfigureAwait(false);
-            }
-        }
-        catch (Exception exception)
-        {
-            if (!WrapAndThrowException(exception))
-            {
-                throw;
-            }
-        }
-    }
-
-    public async Task DisconnectAsync(CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        ThrowIfDisposed();
-
-        try
-        {
-            await _channel.DisconnectAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception exception)
-        {
-            if (!WrapAndThrowException(exception))
-            {
-                throw;
-            }
-        }
+        Dispose();
+        return Task.CompletedTask;
     }
 
     public async Task<ReceivedMqttPacket> ReceivePacketAsync(CancellationToken cancellationToken)

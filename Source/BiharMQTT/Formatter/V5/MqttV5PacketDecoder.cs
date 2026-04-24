@@ -489,9 +489,7 @@ public sealed class MqttV5PacketDecoder
 
         if (!_bufferReader.EndOfStream)
         {
-            packet.PayloadSegment = _bufferReader.UseZeroCopySlice
-                ? _bufferReader.ReadRemainingDataSlice()
-                : new ArraySegment<byte>(_bufferReader.ReadRemainingData());
+            packet.PayloadSegment = _bufferReader.ReadRemainingDataSlice();
         }
 
         return packet;
