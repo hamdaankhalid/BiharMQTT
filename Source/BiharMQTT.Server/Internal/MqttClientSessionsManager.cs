@@ -35,8 +35,6 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
     readonly MqttSessionsStorage _sessionsStorage = new();
     readonly HashSet<MqttSession> _subscriberSessions = [];
 
-    // Reusable snapshot list for dispatch — avoids per-publish List allocation.
-    readonly List<MqttSession> _subscriberSessionsSnapshot = [];
 
     public MqttClientSessionsManager(
         MqttServerOptions options,
@@ -293,6 +291,7 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
         }
     }
 
+    // Do MQTT handshake 
     public async Task HandleClientConnectionAsync(MqttChannelAdapter channelAdapter, CancellationToken cancellationToken)
     {
         MqttConnectedClient connectedClient = null;
@@ -306,7 +305,8 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
                 return;
             }
 
-            var reason = ValidateConnection(connectPacket, channelAdapter);
+            bool clientIdWasEmpty = connectPacket.ClientId.Count == 0;
+            MqttConnectReasonCode reason = ValidateConnection(ref connectPacket, channelAdapter);
 
             var connAckPacket = new MqttConnAckPacket
             {
@@ -320,7 +320,8 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
 
                 AuthenticationMethod = connectPacket.AuthenticationMethod,
                 AuthenticationData = connectPacket.AuthenticationData,
-                AssignedClientIdentifier = connectPacket.ClientId,
+                // Per MQTT v5 §3.2.2.3.7: only include AssignedClientIdentifier when server assigned the ID
+                AssignedClientIdentifier = clientIdWasEmpty ? connectPacket.ClientId : default,
                 ReasonString = default,
                 ServerReference = default,
                 UserProperties = connectPacket.UserProperties,
@@ -342,8 +343,8 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
             // Pass connAckPacket so that IsSessionPresent flag can be set if the client session already exists.
             connectedClient = await CreateClientConnection(connectPacket, connAckPacket, channelAdapter).ConfigureAwait(false);
 
-            var connAckEncoder = channelAdapter.PacketFormatterAdapter.Encoder;
-            var connAckBuffer = connAckEncoder.Encode(ref connAckPacket);
+            MqttV5PacketEncoder connAckEncoder = channelAdapter.PacketFormatterAdapter.Encoder;
+            MqttPacketBuffer connAckBuffer = connAckEncoder.Encode(ref connAckPacket);
             await connectedClient.SendPacketAsync(connAckBuffer, cancellationToken).ConfigureAwait(false);
 
             await connectedClient.RunAsync().ConfigureAwait(false);
@@ -612,9 +613,7 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
             _sessionsManagementLock.EnterReadLock();
             try
             {
-                _subscriberSessionsSnapshot.Clear();
-                _subscriberSessionsSnapshot.AddRange(_subscriberSessions);
-                subscriberSessions = _subscriberSessionsSnapshot;
+                subscriberSessions = new List<MqttSession>(_subscriberSessions);
             }
             finally
             {
@@ -661,12 +660,14 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
                 if (slot.IsValid)
                 {
                     _ringBuffer.AddRef(slot);
-                    var capturedSlot = slot;
-                    session.EnqueuePublishPacket(ref publishPacketCopy, busItem =>
-                    {
-                        busItem.OnTerminated = MessageRingBuffer.ReleaseCallback;
-                        busItem.TerminationState = (_ringBuffer, capturedSlot);
-                    });
+                    session.EnqueuePublishPacket(
+                        ref publishPacketCopy,
+                        (_ringBuffer, slot),
+                        static (busItem, state) =>
+                        {
+                            busItem.OnTerminated = MessageRingBuffer.ReleaseCallback;
+                            busItem.TerminationState = state;
+                        });
                 }
                 else
                 {
@@ -778,12 +779,12 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
         }
     }
 
-    private static MqttConnectReasonCode ValidateConnection(MqttConnectPacket connectPacket, MqttChannelAdapter channelAdapter)
+    private static MqttConnectReasonCode ValidateConnection(ref MqttConnectPacket connectPacket, MqttChannelAdapter channelAdapter)
     {
         // Check the client ID and set a random one if supported.
         if (connectPacket.ClientId.Count == 0 && channelAdapter.PacketFormatterAdapter.ProtocolVersion == MqttProtocolVersion.V500)
         {
-            connectPacket.ClientId = new ArraySegment<byte>(System.Text.Encoding.UTF8.GetBytes("TODO_GENERATE_RANDOM_CLIENT_ID"));
+            connectPacket.ClientId = new ArraySegment<byte>(System.Text.Encoding.UTF8.GetBytes(Guid.NewGuid().ToString("N")));
         }
 
         if (connectPacket.ClientId.Count == 0)

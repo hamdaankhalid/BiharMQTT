@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information.
 
 using System.Buffers;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
@@ -137,6 +138,7 @@ public sealed class MqttChannelAdapter : Disposable
 
             try
             {
+                // This is the cold path. Clients should be supporting fragmentation of large packets... this has unavoidable performance implications
                 if (packetBuffer.Payload.Length == 0 || !AllowPacketFragmentation)
                 {
                     var joined = packetBuffer.Join();
@@ -156,9 +158,9 @@ public sealed class MqttChannelAdapter : Disposable
                     }
 
                     // Write payload segments
-                    foreach (var segment in packetBuffer.Payload)
+                    foreach (ReadOnlyMemory<byte> segment in packetBuffer.Payload)
                     {
-                        var segVt = _channel.WriteAsync(segment);
+                        ValueTask segVt = _channel.WriteAsync(segment);
                         if (!segVt.IsCompletedSuccessfully)
                         {
                             await segVt.ConfigureAwait(false);

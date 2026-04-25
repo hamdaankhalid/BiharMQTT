@@ -18,33 +18,6 @@ public static class MqttServerExtensions
         return server.DisconnectClientAsync(id, new MqttServerClientDisconnectOptions { ReasonCode = reasonCode });
     }
 
-    public static Task InjectApplicationMessage(
-        this MqttServer server,
-        string topic,
-        string payload = null,
-        MqttQualityOfServiceLevel qualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce,
-        bool retain = false)
-    {
-        ArgumentNullException.ThrowIfNull(server);
-        ArgumentNullException.ThrowIfNull(topic);
-
-        var payloadBuffer = EmptyBuffer.Array;
-        if (payload != null)
-        {
-            payloadBuffer = Encoding.UTF8.GetBytes(payload);
-        }
-
-        return server.InjectApplicationMessage(
-            new InjectedMqttApplicationMessage(
-                new MqttApplicationMessage
-                {
-                    Topic = topic,
-                    PayloadSegment = new ArraySegment<byte>(payloadBuffer),
-                    QualityOfServiceLevel = qualityOfServiceLevel,
-                    Retain = retain
-                }));
-    }
-
     /// <summary>
     ///     Convenience extension that injects an application message using the low-allocation
     ///     <see cref="MqttBufferedApplicationMessage" /> path with a <see cref="ReadOnlyMemory{T}" /> payload.
@@ -74,24 +47,5 @@ public static class MqttServerExtensions
         ArgumentNullException.ThrowIfNull(server);
 
         return server.StopAsync(new MqttServerStopOptions());
-    }
-
-    public static Task SubscribeAsync(this MqttServer server, string clientId, params MqttTopicFilter[] topicFilters)
-    {
-        ArgumentNullException.ThrowIfNull(server);
-        ArgumentNullException.ThrowIfNull(clientId);
-        ArgumentNullException.ThrowIfNull(topicFilters);
-
-        return server.SubscribeAsync(clientId, topicFilters);
-    }
-
-    public static Task SubscribeAsync(this MqttServer server, string clientId, string topic)
-    {
-        ArgumentNullException.ThrowIfNull(server);
-        ArgumentNullException.ThrowIfNull(clientId);
-        ArgumentNullException.ThrowIfNull(topic);
-
-        var topicFilter = new MqttTopicFilter { Topic = new ArraySegment<byte>(System.Text.Encoding.UTF8.GetBytes(topic)) };
-        return server.SubscribeAsync(clientId, new[] { topicFilter });
     }
 }

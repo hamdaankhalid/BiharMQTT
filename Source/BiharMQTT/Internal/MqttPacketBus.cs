@@ -122,7 +122,7 @@ public sealed class MqttPacketBus : IDisposable
         return null;
     }
 
-    public void EnqueueItem(MqttPacketBusItem item, MqttPacketBusPartition partition)
+    public void EnqueueItem(ref MqttPacketBusItem item, MqttPacketBusPartition partition)
     {
         lock (_syncRoot)
         {

@@ -39,6 +39,7 @@ public class MqttServer : Disposable
         _rootLogger = logger ?? throw new ArgumentNullException(nameof(logger));
         _logger = logger.WithSource(nameof(MqttServer));
 
+        // Ring buffer is shared between all client sessions. HK TODO: maybe I can use allocator per client instead here to reduce contention
         _ringBuffer = new MessageRingBuffer(options.RingBufferCapacityBytes, options.RingBufferMaxSlots);
 
         _retainedMessagesManager = new MqttRetainedMessagesManager(_rootLogger);
@@ -107,13 +108,6 @@ public class MqttServer : Disposable
         return _retainedMessagesManager.GetMessage(topic);
     }
 
-    public Task<IList<MqttApplicationMessage>> GetRetainedMessagesAsync()
-    {
-        ThrowIfNotStarted();
-
-        return _retainedMessagesManager.GetMessages();
-    }
-
     public Task<IList<MqttSessionStatus>> GetSessionsAsync()
     {
         ThrowIfNotStarted();
@@ -126,30 +120,6 @@ public class MqttServer : Disposable
         ThrowIfNotStarted();
 
         return _clientSessionsManager.GetSessionStatus(id);
-    }
-
-    public Task InjectApplicationMessage(InjectedMqttApplicationMessage injectedApplicationMessage, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(injectedApplicationMessage);
-        ArgumentNullException.ThrowIfNull(injectedApplicationMessage.ApplicationMessage);
-
-        MqttTopicValidator.ThrowIfInvalid(injectedApplicationMessage.ApplicationMessage.Topic);
-
-        ThrowIfNotStarted();
-
-        if (string.IsNullOrEmpty(injectedApplicationMessage.ApplicationMessage.Topic))
-        {
-            throw new NotSupportedException("Injected application messages must contain a topic (topic alias is not supported)");
-        }
-
-        var sessionItems = injectedApplicationMessage.CustomSessionItems ?? ServerSessionItems;
-
-        return _clientSessionsManager.DispatchApplicationMessage(
-            injectedApplicationMessage.SenderClientId,
-            injectedApplicationMessage.SenderUserName,
-            sessionItems,
-            injectedApplicationMessage.ApplicationMessage,
-            cancellationToken);
     }
 
     /// <summary>
