@@ -6,12 +6,20 @@ namespace BiharMQTT.Formatter.V5;
 
 public sealed class MqttV5PacketFormatter
 {
+    readonly MqttBufferWriter _bufferWriter;
+
     public MqttV5PacketDecoder Decoder { get; }
     public MqttV5PacketEncoder Encoder { get; }
 
     public MqttV5PacketFormatter(MqttBufferWriter bufferWriter)
     {
+        _bufferWriter = bufferWriter ?? throw new ArgumentNullException(nameof(bufferWriter));
         Decoder = new MqttV5PacketDecoder();
         Encoder = new MqttV5PacketEncoder(bufferWriter);
+    }
+
+    public void Cleanup()
+    {
+        _bufferWriter.Cleanup();
     }
 }

@@ -10,8 +10,11 @@ using BiharMQTT.Internal;
 using BiharMQTT.Packets;
 using BiharMQTT.Protocol;
 using BiharMQTT.Server.Exceptions;
+using static BiharMQTT.Internal.MqttSegmentHelper;
 
 namespace BiharMQTT.Server.Internal;
+
+public delegate void ActionRef2<T>(ref MqttPacketBusItem packetBusItem, T state);
 
 public sealed class MqttSession : IDisposable
 {
@@ -54,8 +57,6 @@ public sealed class MqttSession : IDisposable
     public uint ExpiryInterval => _connectPacket.SessionExpiryInterval;
 
     public bool HasSubscribedTopics => _subscribedTopics != null && _subscribedTopics.Count > 0;
-
-    static string SegmentToString(ArraySegment<byte> seg) => seg.Count == 0 ? string.Empty : System.Text.Encoding.UTF8.GetString(seg.Array!, seg.Offset, seg.Count);
 
     public string Id => SegmentToString(_connectPacket.ClientId);
 
@@ -142,53 +143,16 @@ public sealed class MqttSession : IDisposable
 
         _packetBus.EnqueueItem(ref packetBusItem, MqttPacketBusPartition.Data);
         return EnqueueDataPacketResult.Enqueued;
-    }
-
-    /// <summary>
-    ///     Encodes a publish packet, assigns a packet identifier for QoS > 0,
-    ///     tracks the packet for acknowledgement, and enqueues it.
-    /// </summary>
-    public EnqueueDataPacketResult EnqueuePublishPacket(ref MqttPublishPacket publishPacket, Action<MqttPacketBusItem> configureBusItem = null)
-    {
-        if (publishPacket.QualityOfServiceLevel > MqttQualityOfServiceLevel.AtMostOnce)
-        {
-            publishPacket.PacketIdentifier = _packetIdentifierProvider.GetNextPacketIdentifier();
-
-            lock (_unacknowledgedPublishPackets)
-            {
-                _unacknowledgedPublishPackets.Add(publishPacket);
-            }
-        }
-
-        MqttPacketBuffer buffer;
-        lock (_encoderLock)
-        {
-            var encoded = _encoder.Encode(ref publishPacket);
-
-            // The Packet segment references the encoder's shared internal buffer
-            // which is overwritten on the next Encode call. Copy the header bytes
-            // so the enqueued packet owns stable memory.
-            Span<byte> headerSpan = encoded.Packet.AsSpan();
-            var headerCopy = encoded.Packet.AsSpan().ToArray();
-            buffer = encoded.Payload.Length > 0
-                ? new MqttPacketBuffer(new ArraySegment<byte>(headerCopy), encoded.Payload)
-                : new MqttPacketBuffer(new ArraySegment<byte>(headerCopy));
-        }
-
-        var busItem = new MqttPacketBusItem(buffer);
-        configureBusItem?.Invoke(busItem);
-
-        return EnqueueDataPacket(ref busItem);
-    }
+    } 
 
     /// <summary>
     ///     Encodes a publish packet and enqueues it while allowing an explicit state
     ///     parameter for callback configuration to avoid closure allocations.
     /// </summary>
-    public EnqueueDataPacketResult EnqueuePublishPacket<TState>(
+    public EnqueueDataPacketResult EnqueuePublishPacket(
         ref MqttPublishPacket publishPacket,
-        TState state,
-        Action<MqttPacketBusItem, TState> configureBusItem)
+        (MessageRingBuffer, MessageSlot) state = default,
+        ActionRef2<(MessageRingBuffer, MessageSlot)> configureBusItem = null)
     {
         if (publishPacket.QualityOfServiceLevel > MqttQualityOfServiceLevel.AtMostOnce)
         {
@@ -209,6 +173,7 @@ public sealed class MqttSession : IDisposable
             // The Packet segment references the encoder's shared internal buffer
             // which is overwritten on the next Encode call. Copy the header bytes
             // so the enqueued packet owns stable memory.
+            // HK TODO: This is an annoying allocation
             var headerCopy = encoded.Packet.AsSpan().ToArray();
             buffer = encoded.Payload.Length > 0
                 ? new MqttPacketBuffer(new ArraySegment<byte>(headerCopy), encoded.Payload)
@@ -223,7 +188,7 @@ public sealed class MqttSession : IDisposable
 
     public void EnqueueHealthPacket(MqttPacketBusItem packetBusItem)
     {
-        _packetBus.EnqueueItem(packetBusItem, MqttPacketBusPartition.Health);
+        _packetBus.EnqueueItem(ref packetBusItem, MqttPacketBusPartition.Health);
     }
 
     public MqttPublishPacket PeekAcknowledgePublishPacket(ushort packetIdentifier)
@@ -236,6 +201,7 @@ public sealed class MqttSession : IDisposable
         }
     }
 
+    // HK TODO: Understand when and how this is used
     public void Recover()
     {
         // TODO: Keep the bus and only insert pending items again.

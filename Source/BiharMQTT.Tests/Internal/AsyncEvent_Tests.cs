@@ -107,7 +107,7 @@ public sealed class AsyncEvent_Tests
     Task OnTestEventAsync(EventArgs arg)
     {
         Interlocked.Increment(ref _testEventAsyncCount);
-        return CompletedTask.Instance;
+        return Task.CompletedTask;
     }
 
     sealed class TestClass

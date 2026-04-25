@@ -6,7 +6,6 @@ using System.Net;
 using System.Net.Sockets;
 using BiharMQTT.Adapter;
 using BiharMQTT.Diagnostics.Logger;
-using BiharMQTT.Internal;
 
 namespace BiharMQTT.Server.Internal.Adapter;
 
@@ -18,8 +17,6 @@ public sealed class MqttTcpServerAdapter : IDisposable
 
     MqttServerOptions _serverOptions;
 
-    public Func<MqttChannelAdapter, Task> ClientHandler { get; set; }
-
     public bool TreatSocketOpeningErrorAsWarning { get; set; }
 
     public void Dispose()
@@ -27,12 +24,14 @@ public sealed class MqttTcpServerAdapter : IDisposable
         Cleanup();
     }
 
-    public Task StartAsync(MqttServerOptions options, IMqttNetLogger logger)
+    public Task StartAsync(MqttServerOptions options, IMqttNetLogger logger, Func<MqttChannelAdapter, Task> clientHandler)
     {
         if (_cancellationTokenSource != null)
         {
             throw new InvalidOperationException("Server is already started.");
         }
+
+        ArgumentNullException.ThrowIfNull(clientHandler);
 
         _serverOptions = options;
 
@@ -40,7 +39,7 @@ public sealed class MqttTcpServerAdapter : IDisposable
 
         if (options.DefaultEndpointOptions.IsEnabled)
         {
-            RegisterListeners(options.DefaultEndpointOptions, logger, _cancellationTokenSource.Token);
+            RegisterListeners(options.DefaultEndpointOptions, logger, clientHandler, _cancellationTokenSource.Token);
         }
 
         if (options.TlsEndpointOptions?.IsEnabled == true)
@@ -50,16 +49,16 @@ public sealed class MqttTcpServerAdapter : IDisposable
                 throw new ArgumentException("TLS certificate is not set.");
             }
 
-            RegisterListeners(options.TlsEndpointOptions, logger, _cancellationTokenSource.Token);
+            RegisterListeners(options.TlsEndpointOptions, logger, clientHandler, _cancellationTokenSource.Token);
         }
 
-        return CompletedTask.Instance;
+        return Task.CompletedTask;
     }
 
     public Task StopAsync()
     {
         Cleanup();
-        return CompletedTask.Instance;
+        return Task.CompletedTask;
     }
 
     void Cleanup()
@@ -82,25 +81,11 @@ public sealed class MqttTcpServerAdapter : IDisposable
         }
     }
 
-    Task OnClientAcceptedAsync(MqttChannelAdapter channelAdapter)
-    {
-        var clientHandler = ClientHandler;
-        if (clientHandler == null)
-        {
-            return CompletedTask.Instance;
-        }
-
-        return clientHandler(channelAdapter);
-    }
-
-    void RegisterListeners(MqttServerTcpEndpointBaseOptions tcpEndpointOptions, IMqttNetLogger logger, CancellationToken cancellationToken)
+    void RegisterListeners(MqttServerTcpEndpointBaseOptions tcpEndpointOptions, IMqttNetLogger logger, Func<MqttChannelAdapter, Task> clientHandler, CancellationToken cancellationToken)
     {
         if (!tcpEndpointOptions.BoundInterNetworkAddress.Equals(IPAddress.None))
         {
-            var listenerV4 = new MqttTcpServerListener(AddressFamily.InterNetwork, _serverOptions, tcpEndpointOptions, logger)
-            {
-                ClientHandler = OnClientAcceptedAsync
-            };
+            var listenerV4 = new MqttTcpServerListener(AddressFamily.InterNetwork, _serverOptions, tcpEndpointOptions, clientHandler, logger);
 
             if (listenerV4.Start(TreatSocketOpeningErrorAsWarning, cancellationToken))
             {
@@ -110,10 +95,7 @@ public sealed class MqttTcpServerAdapter : IDisposable
 
         if (!tcpEndpointOptions.BoundInterNetworkV6Address.Equals(IPAddress.None))
         {
-            var listenerV6 = new MqttTcpServerListener(AddressFamily.InterNetworkV6, _serverOptions, tcpEndpointOptions, logger)
-            {
-                ClientHandler = OnClientAcceptedAsync
-            };
+            var listenerV6 = new MqttTcpServerListener(AddressFamily.InterNetworkV6, _serverOptions, tcpEndpointOptions, clientHandler, logger);
 
             if (listenerV6.Start(TreatSocketOpeningErrorAsWarning, cancellationToken))
             {

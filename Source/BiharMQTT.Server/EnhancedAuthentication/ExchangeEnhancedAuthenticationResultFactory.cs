@@ -1,12 +1,10 @@
-using System.Text;
 using BiharMQTT.Packets;
+using static BiharMQTT.Internal.MqttSegmentHelper;
 
 namespace BiharMQTT.Server.EnhancedAuthentication;
 
 public static class ExchangeEnhancedAuthenticationResultFactory
 {
-    static string SegmentToString(ArraySegment<byte> seg) => seg.Count == 0 ? string.Empty : Encoding.UTF8.GetString(seg.Array!, seg.Offset, seg.Count);
-
     static byte[] SegmentToByteArray(ArraySegment<byte> seg) => seg.Count == 0 ? null : seg.ToArray();
 
     public static ExchangeEnhancedAuthenticationResult Create(MqttAuthPacket authPacket)

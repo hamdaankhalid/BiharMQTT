@@ -3,7 +3,6 @@
 // See the LICENSE file in the project root for more information.
 
 using System.Collections;
-using BiharMQTT.Internal;
 using BiharMQTT.Server.Internal;
 using BiharMQTT.Server.Internal.Formatter;
 
@@ -96,6 +95,6 @@ public sealed class MqttSessionStatus
     public Task EnqueueApplicationMessageAsync(MqttApplicationMessage applicationMessage)
     {
         TryEnqueueApplicationMessage(applicationMessage, out _);
-        return CompletedTask.Instance;
+        return Task.CompletedTask;
     }
 }

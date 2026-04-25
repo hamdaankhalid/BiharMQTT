@@ -57,7 +57,7 @@ public sealed class AsyncSignal : IDisposable
             if (_isSignaled)
             {
                 _isSignaled = false;
-                return CompletedTask.Instance;
+                return Task.CompletedTask;
             }
 
             if (_waiter != null)

@@ -4,14 +4,13 @@
 
 using BiharMQTT.Packets;
 using BiharMQTT.Protocol;
+using static BiharMQTT.Internal.MqttSegmentHelper;
 
 namespace BiharMQTT.Server.Internal;
 
 public sealed class MqttClientSubscriptionsManager : IDisposable
 {
     static readonly List<uint> EmptySubscriptionIdentifiers = new List<uint>();
-
-    static string SegmentToString(ArraySegment<byte> seg) => seg.Count == 0 ? string.Empty : System.Text.Encoding.UTF8.GetString(seg.Array!, seg.Offset, seg.Count);
 
     readonly Dictionary<ulong, HashSet<MqttSubscription>> _noWildcardSubscriptionsByTopicHash = new Dictionary<ulong, HashSet<MqttSubscription>>();
     readonly MqttRetainedMessagesManager _retainedMessagesManager;

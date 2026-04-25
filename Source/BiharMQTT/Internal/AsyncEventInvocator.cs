@@ -32,7 +32,7 @@ public readonly struct AsyncEventInvocator<TEventArgs>
         if (_handler != null)
         {
             _handler(eventArgs);
-            return CompletedTask.Instance;
+            return Task.CompletedTask;
         }
 
         if (_asyncHandler != null)

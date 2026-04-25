@@ -18,22 +18,27 @@ public sealed class MqttPacketBus_Tests
     const byte TagControl = 2;
     const byte TagHealth = 3;
 
+    static void Enqueue(MqttPacketBus bus, MqttPacketBusItem item, MqttPacketBusPartition partition)
+    {
+        bus.EnqueueItem(ref item, partition);
+    }
+
     [TestMethod]
     public void Alternate_Priorities()
     {
         var bus = new MqttPacketBus();
 
-        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagData)), MqttPacketBusPartition.Data);
-        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagData)), MqttPacketBusPartition.Data);
-        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagData)), MqttPacketBusPartition.Data);
+        Enqueue(bus, new MqttPacketBusItem(Buf(TagData)), MqttPacketBusPartition.Data);
+        Enqueue(bus, new MqttPacketBusItem(Buf(TagData)), MqttPacketBusPartition.Data);
+        Enqueue(bus, new MqttPacketBusItem(Buf(TagData)), MqttPacketBusPartition.Data);
 
-        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagControl)), MqttPacketBusPartition.Control);
-        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagControl)), MqttPacketBusPartition.Control);
-        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagControl)), MqttPacketBusPartition.Control);
+        Enqueue(bus, new MqttPacketBusItem(Buf(TagControl)), MqttPacketBusPartition.Control);
+        Enqueue(bus, new MqttPacketBusItem(Buf(TagControl)), MqttPacketBusPartition.Control);
+        Enqueue(bus, new MqttPacketBusItem(Buf(TagControl)), MqttPacketBusPartition.Control);
 
-        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagHealth)), MqttPacketBusPartition.Health);
-        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagHealth)), MqttPacketBusPartition.Health);
-        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagHealth)), MqttPacketBusPartition.Health);
+        Enqueue(bus, new MqttPacketBusItem(Buf(TagHealth)), MqttPacketBusPartition.Health);
+        Enqueue(bus, new MqttPacketBusItem(Buf(TagHealth)), MqttPacketBusPartition.Health);
+        Enqueue(bus, new MqttPacketBusItem(Buf(TagHealth)), MqttPacketBusPartition.Health);
 
         Assert.AreEqual(9, bus.TotalItemsCount);
 
@@ -67,9 +72,9 @@ public sealed class MqttPacketBus_Tests
             delivered = true;
         };
 
-        bus.EnqueueItem(item1, MqttPacketBusPartition.Data);
-        bus.EnqueueItem(item2, MqttPacketBusPartition.Data);
-        bus.EnqueueItem(item3, MqttPacketBusPartition.Data);
+        Enqueue(bus, item1, MqttPacketBusPartition.Data);
+        Enqueue(bus, item2, MqttPacketBusPartition.Data);
+        Enqueue(bus, item3, MqttPacketBusPartition.Data);
 
         Assert.IsFalse(delivered);
 
@@ -92,9 +97,9 @@ public sealed class MqttPacketBus_Tests
     {
         var bus = new MqttPacketBus();
 
-        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagData)), MqttPacketBusPartition.Data);
-        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagData)), MqttPacketBusPartition.Data);
-        bus.EnqueueItem(new MqttPacketBusItem(Buf(TagData)), MqttPacketBusPartition.Data);
+        Enqueue(bus, new MqttPacketBusItem(Buf(TagData)), MqttPacketBusPartition.Data);
+        Enqueue(bus, new MqttPacketBusItem(Buf(TagData)), MqttPacketBusPartition.Data);
+        Enqueue(bus, new MqttPacketBusItem(Buf(TagData)), MqttPacketBusPartition.Data);
 
         Assert.AreEqual(3, bus.TotalItemsCount);
 
@@ -124,7 +129,7 @@ public sealed class MqttPacketBus_Tests
             {
                 for (var i = 0; i < messageCount; i++)
                 {
-                    bus.EnqueueItem(new MqttPacketBusItem(Buf(TagHealth)), MqttPacketBusPartition.Health);
+                    Enqueue(bus, new MqttPacketBusItem(Buf(TagHealth)), MqttPacketBusPartition.Health);
 
                     Thread.Sleep(delayRandom.Next(0, 10));
                 }

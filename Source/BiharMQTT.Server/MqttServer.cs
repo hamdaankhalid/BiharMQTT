@@ -79,7 +79,7 @@ public class MqttServer : Disposable
     {
         ThrowIfNotStarted();
 
-        return _retainedMessagesManager?.ClearMessages() ?? CompletedTask.Instance;
+        return _retainedMessagesManager?.ClearMessages() ?? Task.CompletedTask;
     }
 
     public Task DisconnectClientAsync(string id, MqttServerClientDisconnectOptions options)
@@ -167,8 +167,7 @@ public class MqttServer : Disposable
         _clientSessionsManager.Start();
         _keepAliveMonitor.Start(cancellationToken);
 
-        _adapter.ClientHandler = c => OnHandleClient(c, cancellationToken);
-        await _adapter.StartAsync(_options, _rootLogger).ConfigureAwait(false);
+        await _adapter.StartAsync(_options, _rootLogger, c => OnHandleClient(c, cancellationToken)).ConfigureAwait(false);
 
         _logger.Info("Started");
     }
@@ -190,7 +189,6 @@ public class MqttServer : Disposable
 
             await _clientSessionsManager.CloseAllConnections(options.DefaultClientDisconnectOptions).ConfigureAwait(false);
 
-            _adapter.ClientHandler = null;
             await _adapter.StopAsync().ConfigureAwait(false);
         }
         finally
@@ -252,11 +250,12 @@ public class MqttServer : Disposable
         base.Dispose(disposing);
     }
 
+    // Callback called by Adapter when a new client connects
     Task OnHandleClient(MqttChannelAdapter channelAdapter, CancellationToken cancellationToken)
     {
         if (_isStopping || !AcceptNewConnections)
         {
-            return CompletedTask.Instance;
+            return Task.CompletedTask;
         }
 
         return _clientSessionsManager.HandleClientConnectionAsync(channelAdapter, cancellationToken);

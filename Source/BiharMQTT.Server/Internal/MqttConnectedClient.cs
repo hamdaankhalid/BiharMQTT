@@ -17,9 +17,17 @@ using MqttPubCompPacketFactory = BiharMQTT.Server.Internal.Formatter.MqttPubComp
 using MqttPublishPacketFactory = BiharMQTT.Server.Internal.Formatter.MqttPublishPacketFactory;
 using MqttPubRecPacketFactory = BiharMQTT.Server.Internal.Formatter.MqttPubRecPacketFactory;
 using MqttPubRelPacketFactory = BiharMQTT.Server.Internal.Formatter.MqttPubRelPacketFactory;
+using static BiharMQTT.Internal.MqttSegmentHelper;
 
 namespace BiharMQTT.Server.Internal;
 
+/*
+    Represents a connected MQTT client on the server side. This class manages the
+    lifecycle of a connected client, including receiving and sending MQTT packets,
+    managing the session state, handling topic aliases, and coordinating with the
+    server's session manager to ensure proper delivery of messages and control
+    packets to and from the client.
+*/
 public sealed class MqttConnectedClient : IDisposable
 {
     readonly MqttNetSourceLogger _logger;
@@ -56,8 +64,6 @@ public sealed class MqttConnectedClient : IDisposable
     public MqttConnectPacket ConnectPacket { get; }
 
     public MqttDisconnectPacket? DisconnectPacket { get; private set; }
-
-    static string SegmentToString(ArraySegment<byte> seg) => seg.Count == 0 ? string.Empty : System.Text.Encoding.UTF8.GetString(seg.Array!, seg.Offset, seg.Count);
 
     public string Id => SegmentToString(ConnectPacket.ClientId);
 
@@ -219,14 +225,16 @@ public sealed class MqttConnectedClient : IDisposable
             {
                 var pubAckPacket = MqttPubAckPacketFactory.Create(publishPacket, dispatchApplicationMessageResult);
                 var buffer = ChannelAdapter.PacketFormatterAdapter.Encoder.Encode(ref pubAckPacket);
-                Session.EnqueueControlPacket(new MqttPacketBusItem(buffer));
+                var packetBusItem = new MqttPacketBusItem(buffer);
+                Session.EnqueueControlPacket(ref packetBusItem);
                 break;
             }
             case MqttQualityOfServiceLevel.ExactlyOnce:
             {
                 var pubRecPacket = MqttPubRecPacketFactory.Create(publishPacket, dispatchApplicationMessageResult);
                 var buffer = ChannelAdapter.PacketFormatterAdapter.Encoder.Encode(ref pubRecPacket);
-                Session.EnqueueControlPacket(new MqttPacketBusItem(buffer));
+                var packetBusItem = new MqttPacketBusItem(buffer);
+                Session.EnqueueControlPacket(ref packetBusItem);
                 break;
             }
             default:
@@ -240,16 +248,18 @@ public sealed class MqttConnectedClient : IDisposable
     {
         var pubRelPacket = MqttPubRelPacketFactory.Create(pubRecPacket, MqttPubRelReasonCode.Success);
         var buffer = ChannelAdapter.PacketFormatterAdapter.Encoder.Encode(ref pubRelPacket);
-        Session.EnqueueControlPacket(new MqttPacketBusItem(buffer));
+        var packetBusItem = new MqttPacketBusItem(buffer);
+        Session.EnqueueControlPacket(ref packetBusItem);
 
-        return CompletedTask.Instance;
+        return Task.CompletedTask;
     }
 
     void HandleIncomingPubRelPacket(MqttPubRelPacket pubRelPacket)
     {
         var pubCompPacket = MqttPubCompPacketFactory.Create(pubRelPacket, MqttPubCompReasonCode.Success);
         var buffer = ChannelAdapter.PacketFormatterAdapter.Encoder.Encode(ref pubCompPacket);
-        Session.EnqueueControlPacket(new MqttPacketBusItem(buffer));
+        var packetBusItem = new MqttPacketBusItem(buffer);
+        Session.EnqueueControlPacket(ref packetBusItem);
     }
 
     async Task HandleIncomingSubscribePacket(MqttSubscribePacket subscribePacket, CancellationToken cancellationToken)
@@ -258,7 +268,8 @@ public sealed class MqttConnectedClient : IDisposable
 
         var subAckPacket = MqttSubAckPacketFactory.Create(subscribePacket, subscribeResult);
         var buffer = ChannelAdapter.PacketFormatterAdapter.Encoder.Encode(ref subAckPacket);
-        Session.EnqueueControlPacket(new MqttPacketBusItem(buffer));
+        var packetBusItem = new MqttPacketBusItem(buffer);
+        Session.EnqueueControlPacket(ref packetBusItem);
 
         if (subscribeResult.CloseConnection)
         {
@@ -275,7 +286,8 @@ public sealed class MqttConnectedClient : IDisposable
         {
             var publishPacket = MqttPublishPacketFactory.Create(retainedMessageMatch);
             var retainedBuffer = ChannelAdapter.PacketFormatterAdapter.Encoder.Encode(ref publishPacket);
-            Session.EnqueueDataPacket(new MqttPacketBusItem(retainedBuffer));
+            packetBusItem = new MqttPacketBusItem(retainedBuffer);
+            Session.EnqueueDataPacket(ref packetBusItem);
         }
     }
 
@@ -285,7 +297,8 @@ public sealed class MqttConnectedClient : IDisposable
 
         var unsubAckPacket = MqttUnsubAckPacketFactory.Create(unsubscribePacket, unsubscribeResult);
         var buffer = ChannelAdapter.PacketFormatterAdapter.Encoder.Encode(ref unsubAckPacket);
-        Session.EnqueueControlPacket(new MqttPacketBusItem(buffer));
+        var packetBusItem = new MqttPacketBusItem(buffer);
+        Session.EnqueueControlPacket(ref packetBusItem);
 
         if (unsubscribeResult.CloseConnection)
         {

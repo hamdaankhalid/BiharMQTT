@@ -22,6 +22,7 @@ public sealed class MqttTcpServerListener : IDisposable
     readonly MqttServerOptions _serverOptions;
     readonly MqttServerTcpEndpointBaseOptions _options;
     readonly MqttServerTlsTcpEndpointOptions _tlsOptions;
+    readonly Func<MqttChannelAdapter, Task> _clientHandler;
 
     Socket _socket;
     IPEndPoint _localEndPoint;
@@ -30,11 +31,13 @@ public sealed class MqttTcpServerListener : IDisposable
         AddressFamily addressFamily,
         MqttServerOptions serverOptions,
         MqttServerTcpEndpointBaseOptions tcpEndpointOptions,
+        Func<MqttChannelAdapter, Task> clientHandler,
         IMqttNetLogger logger)
     {
         _addressFamily = addressFamily;
         _serverOptions = serverOptions ?? throw new ArgumentNullException(nameof(serverOptions));
         _options = tcpEndpointOptions ?? throw new ArgumentNullException(nameof(tcpEndpointOptions));
+        _clientHandler = clientHandler ?? throw new ArgumentNullException(nameof(clientHandler));
         _rootLogger = logger;
         _logger = logger.WithSource(nameof(MqttTcpServerListener));
 
@@ -43,8 +46,6 @@ public sealed class MqttTcpServerListener : IDisposable
             _tlsOptions = tlsOptions;
         }
     }
-
-    public Func<MqttChannelAdapter, Task> ClientHandler { get; set; }
 
     public bool Start(bool treatErrorsAsWarning, CancellationToken cancellationToken)
     {
@@ -130,6 +131,7 @@ public sealed class MqttTcpServerListener : IDisposable
         _socket?.Dispose();
     }
 
+    // Accept loop for incoming TCP client connections
     async Task AcceptClientConnectionsAsync(CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
@@ -217,21 +219,17 @@ public sealed class MqttTcpServerListener : IDisposable
                 }
             }
 
-            var clientHandler = ClientHandler;
-            if (clientHandler != null)
-            {
-                // Channel takes ownership of both socket and stream (SslStream or null).
-                // After this point, MqttChannelAdapter.Dispose will clean up via MqttTcpChannel.Dispose.
-                var tcpChannel = new MqttTcpChannel(clientSocket, sslStream, _localEndPoint, remoteEndPoint, clientCertificate);
-                ownershipTransferred = true;
+            // Channel takes ownership of both socket and stream (SslStream or null).
+            // After this point, MqttChannelAdapter.Dispose will clean up via MqttTcpChannel.Dispose.
+            var tcpChannel = new MqttTcpChannel(clientSocket, sslStream, _localEndPoint, remoteEndPoint, clientCertificate);
+            ownershipTransferred = true;
 
-                var bufferWriter = new MqttBufferWriter(_serverOptions.WriterBufferSize, _serverOptions.WriterBufferSizeMax);
-                var packetFormatterAdapter = new MqttPacketFormatterAdapter(bufferWriter);
+            var bufferWriter = new MqttBufferWriter(_serverOptions.WriterBufferSize, _serverOptions.WriterBufferSizeMax);
+            var packetFormatterAdapter = new MqttPacketFormatterAdapter(bufferWriter);
 
-                using var clientAdapter = new MqttChannelAdapter(tcpChannel, packetFormatterAdapter, _rootLogger);
-                clientAdapter.AllowPacketFragmentation = _options.AllowPacketFragmentation;
-                await clientHandler(clientAdapter).ConfigureAwait(false);
-            }
+            using var clientAdapter = new MqttChannelAdapter(tcpChannel, packetFormatterAdapter, _rootLogger);
+            clientAdapter.AllowPacketFragmentation = _options.AllowPacketFragmentation;
+            await _clientHandler(clientAdapter).ConfigureAwait(false);
         }
         catch (Exception exception)
         {

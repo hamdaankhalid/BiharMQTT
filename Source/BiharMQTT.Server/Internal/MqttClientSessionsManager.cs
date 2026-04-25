@@ -5,6 +5,7 @@
 using System.Buffers;
 using System.Collections;
 using System.Collections.Concurrent;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using BiharMQTT.Adapter;
 using BiharMQTT.Diagnostics.Logger;
@@ -16,6 +17,7 @@ using BiharMQTT.Packets;
 using BiharMQTT.Protocol;
 using BiharMQTT.Server.Internal.Formatter;
 using MqttPublishPacketFactory = BiharMQTT.Server.Internal.Formatter.MqttPublishPacketFactory;
+using static BiharMQTT.Internal.MqttSegmentHelper;
 
 namespace BiharMQTT.Server.Internal;
 
@@ -111,7 +113,6 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
     }
 
     static ArraySegment<byte> ToSegment(string s) => s == null ? default : new ArraySegment<byte>(Encoding.UTF8.GetBytes(s));
-    static string SegmentToString(ArraySegment<byte> seg) => seg.Count == 0 ? string.Empty : Encoding.UTF8.GetString(seg.Array!, seg.Offset, seg.Count);
 
     public Task<DispatchApplicationMessageResult> DispatchPublishPacketDirect(
         string senderId,
@@ -577,7 +578,7 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
         CancellationToken cancellationToken)
     {
         // Acquire a ring buffer slot and memcopy the payload in.
-        var slot = MessageSlot.Empty;
+        MessageSlot slot = MessageSlot.Empty;
         ReadOnlySequence<byte> ringPayload = default;
 
         var payloadLength = (int)payload.Length;
@@ -663,7 +664,7 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
                     session.EnqueuePublishPacket(
                         ref publishPacketCopy,
                         (_ringBuffer, slot),
-                        static (busItem, state) =>
+                        static (ref MqttPacketBusItem busItem, (MessageRingBuffer, MessageSlot) state) =>
                         {
                             busItem.OnTerminated = MessageRingBuffer.ReleaseCallback;
                             busItem.TerminationState = state;
@@ -676,6 +677,7 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
 
                 _logger.Verbose("Client '{0}': Queued PUBLISH packet with topic '{1}'", session.Id, topic);
             }
+
 
             if (matchingSubscribersCount == 0)
             {
