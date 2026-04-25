@@ -1,72 +1,30 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
-// See the LICENSE file in the project root for more information.
+// Simple BiharMQTT broker — no console input needed.
+// Starts a plain TCP MQTT server on port 1883.
 
-using System.Globalization;
-using System.Reflection;
+using BiharMQTT.Diagnostics.Logger;
+using BiharMQTT.Server;
 
-Console.BackgroundColor = ConsoleColor.White;
-Console.BackgroundColor = ConsoleColor.Red;
-Console.Title = "Samples - BiharMQTT";
-Console.WriteLine("----------------------------------------------");
-Console.WriteLine("-         Welcome to BiharMQTT samples!        -");
-Console.WriteLine("----------------------------------------------");
-Console.ResetColor();
-Console.WriteLine();
-
-var sampleClasses = Assembly.GetExecutingAssembly().GetExportedTypes().OrderBy(c => c.Name).ToList();
-
-var index = 0;
-foreach (var sampleClass in sampleClasses)
+var logger = new MqttNetEventLogger();
+logger.LogMessagePublished += (_, e) =>
 {
-    Console.WriteLine($"{index} = {sampleClass.Name}");
-    index++;
-}
+    Console.WriteLine($"[{e.LogMessage.Level}] {e.LogMessage.Source}: {e.LogMessage.Message}");
+};
 
-Console.WriteLine();
-Console.ForegroundColor = ConsoleColor.Green;
-Console.Write("Please choose sample class (press Enter to continue): ");
-Console.ResetColor();
+var mqttServerFactory = new MqttServerFactory();
+var mqttServerOptions = new MqttServerOptionsBuilder()
+    .WithDefaultEndpoint()       // plain TCP on port 1883
+    .WithDefaultEndpointPort(1883)
+    .Build();
 
-var input = Console.ReadLine();
-var selectedIndex = int.Parse(input ?? "0", CultureInfo.InvariantCulture);
-var selectedSampleClass = sampleClasses[selectedIndex];
-var sampleMethods = selectedSampleClass.GetMethods(BindingFlags.Static | BindingFlags.Public).OrderBy(m => m.Name).ToList();
+using var mqttServer = mqttServerFactory.CreateMqttServer(mqttServerOptions, logger);
+await mqttServer.StartAsync();
 
-index = 0;
-foreach (var sampleMethod in sampleMethods)
-{
-    Console.WriteLine($"{index} = {sampleMethod.Name}");
-    index++;
-}
+Console.WriteLine("BiharMQTT broker running on tcp://localhost:1883");
+Console.WriteLine("Press Ctrl+C to stop.");
 
-Console.WriteLine();
-Console.ForegroundColor = ConsoleColor.Green;
-Console.Write("Please choose sample (press Enter to continue): ");
-Console.ResetColor();
+// Block until process is killed
+var tcs = new TaskCompletionSource();
+Console.CancelKeyPress += (_, e) => { e.Cancel = true; tcs.SetResult(); };
+await tcs.Task;
 
-input = Console.ReadLine();
-selectedIndex = int.Parse(input ?? "0", CultureInfo.InvariantCulture);
-var selectedSampleMethod = sampleMethods[selectedIndex];
-
-Console.WriteLine();
-Console.ForegroundColor = ConsoleColor.White;
-Console.WriteLine("Executing sample...");
-Console.ResetColor();
-Console.WriteLine();
-
-try
-{
-    if (selectedSampleMethod.Invoke(null, null) is Task task)
-    {
-        await task;
-    }
-}
-catch (Exception exception)
-{
-    Console.WriteLine(exception.ToString());
-}
-
-Console.WriteLine();
-Console.WriteLine("Press Enter to exit.");
-Console.ReadLine();
+await mqttServer.StopAsync();
