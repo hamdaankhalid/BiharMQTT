@@ -10,7 +10,7 @@ public static class MqttSubAckPacketFactory
 {
     static ArraySegment<byte> ToSegment(string s) => s == null ? default : new ArraySegment<byte>(System.Text.Encoding.UTF8.GetBytes(s));
 
-    public static MqttSubAckPacket Create(MqttSubscribePacket subscribePacket, SubscribeResult subscribeResult)
+    public static MqttSubAckPacket Create(ref MqttSubscribePacket subscribePacket, SubscribeResult subscribeResult)
     {
         ArgumentNullException.ThrowIfNull(subscribeResult);
 

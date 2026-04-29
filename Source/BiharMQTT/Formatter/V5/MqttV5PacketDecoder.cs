@@ -20,7 +20,7 @@ public sealed class MqttV5PacketDecoder
     readonly List<MqttSubscribeReasonCode> _reusableSubReasonCodes = new();
     readonly List<MqttUnsubscribeReasonCode> _reusableUnsubReasonCodes = new();
 
-    public MqttAuthPacket DecodeAuthPacket(ArraySegment<byte> body)
+    public MqttAuthPacket DecodeAuthPacket(in ArraySegment<byte> body)
     {
         _bufferReader.SetBuffer(body.Array, body.Offset, body.Count);
 
@@ -62,7 +62,7 @@ public sealed class MqttV5PacketDecoder
         return packet;
     }
 
-    public MqttConnAckPacket DecodeConnAckPacket(ArraySegment<byte> body)
+    public MqttConnAckPacket DecodeConnAckPacket(in ArraySegment<byte> body)
     {
         ThrowIfBodyIsEmpty(body);
 
@@ -162,7 +162,7 @@ public sealed class MqttV5PacketDecoder
         return packet;
     }
 
-    public MqttConnectPacket DecodeConnectPacket(ArraySegment<byte> body)
+    public MqttConnectPacket DecodeConnectPacket(in ArraySegment<byte> body)
     {
         ThrowIfBodyIsEmpty(body);
 
@@ -305,7 +305,7 @@ public sealed class MqttV5PacketDecoder
         return packet;
     }
 
-    public MqttDisconnectPacket DecodeDisconnectPacket(ArraySegment<byte> body)
+    public MqttDisconnectPacket DecodeDisconnectPacket(in ArraySegment<byte> body)
     {
         // From RFC: 3.14.2.1 Disconnect Reason Code
         // Byte 1 in the Variable Header is the Disconnect Reason Code.
@@ -351,7 +351,7 @@ public sealed class MqttV5PacketDecoder
         return packet;
     }
 
-    public MqttPubAckPacket DecodePubAckPacket(ArraySegment<byte> body)
+    public MqttPubAckPacket DecodePubAckPacket(in ArraySegment<byte> body)
     {
         ThrowIfBodyIsEmpty(body);
 
@@ -388,7 +388,7 @@ public sealed class MqttV5PacketDecoder
         return packet;
     }
 
-    public MqttPubCompPacket DecodePubCompPacket(ArraySegment<byte> body)
+    public MqttPubCompPacket DecodePubCompPacket(in ArraySegment<byte> body)
     {
         ThrowIfBodyIsEmpty(body);
 
@@ -426,7 +426,7 @@ public sealed class MqttV5PacketDecoder
     }
 
 
-    public MqttPublishPacket DecodePublishPacket(byte header, ArraySegment<byte> body)
+    public MqttPublishPacket DecodePublishPacket(byte header, in ArraySegment<byte> body)
     {
         ThrowIfBodyIsEmpty(body);
 
@@ -502,7 +502,7 @@ public sealed class MqttV5PacketDecoder
         return packet;
     }
 
-    public MqttPubRecPacket DecodePubRecPacket(ArraySegment<byte> body)
+    public MqttPubRecPacket DecodePubRecPacket(in ArraySegment<byte> body)
     {
         ThrowIfBodyIsEmpty(body);
 
@@ -539,7 +539,7 @@ public sealed class MqttV5PacketDecoder
         return packet;
     }
 
-    public MqttPubRelPacket DecodePubRelPacket(ArraySegment<byte> body)
+    public MqttPubRelPacket DecodePubRelPacket(in ArraySegment<byte> body)
     {
         ThrowIfBodyIsEmpty(body);
 
@@ -576,7 +576,7 @@ public sealed class MqttV5PacketDecoder
         return packet;
     }
 
-    public MqttSubAckPacket DecodeSubAckPacket(ArraySegment<byte> body)
+    public MqttSubAckPacket DecodeSubAckPacket(in ArraySegment<byte> body)
     {
         ThrowIfBodyIsEmpty(body);
 
@@ -613,16 +613,15 @@ public sealed class MqttV5PacketDecoder
         return packet;
     }
 
-    public MqttSubscribePacket DecodeSubscribePacket(ArraySegment<byte> body)
+    public MqttSubscribePacket DecodeSubscribePacket(in ArraySegment<byte> body)
     {
         ThrowIfBodyIsEmpty(body);
 
         _bufferReader.SetBuffer(body.Array, body.Offset, body.Count);
 
-        var packet = new MqttSubscribePacket
-        {
-            PacketIdentifier = _bufferReader.ReadTwoByteInteger()
-        };
+        MqttSubscribePacket packet = new();
+
+        packet.PacketIdentifier = _bufferReader.ReadTwoByteInteger();
 
         var propertiesReader = new MqttV5PropertiesReader(_bufferReader, _reusableUserProperties);
         while (propertiesReader.MoveNext())
@@ -664,7 +663,7 @@ public sealed class MqttV5PacketDecoder
         return packet;
     }
 
-    public MqttUnsubAckPacket DecodeUnsubAckPacket(ArraySegment<byte> body)
+    public MqttUnsubAckPacket DecodeUnsubAckPacket(in ArraySegment<byte> body)
     {
         ThrowIfBodyIsEmpty(body);
 
@@ -701,7 +700,7 @@ public sealed class MqttV5PacketDecoder
         return packet;
     }
 
-    public MqttUnsubscribePacket DecodeUnsubscribePacket(ArraySegment<byte> body)
+    public MqttUnsubscribePacket DecodeUnsubscribePacket(in ArraySegment<byte> body)
     {
         ThrowIfBodyIsEmpty(body);
 
@@ -730,7 +729,7 @@ public sealed class MqttV5PacketDecoder
     }
 
     // ReSharper disable once ParameterOnlyUsedForPreconditionCheck.Local
-    static void ThrowIfBodyIsEmpty(ArraySegment<byte> body)
+    static void ThrowIfBodyIsEmpty(in ArraySegment<byte> body)
     {
         if (body.Count == 0)
         {

@@ -13,8 +13,6 @@ public static class MqttPubAckPacketFactory
 
     public static MqttPubAckPacket Create(MqttPublishPacket publishPacket, DispatchApplicationMessageResult dispatchApplicationMessageResult)
     {
-        ArgumentNullException.ThrowIfNull(dispatchApplicationMessageResult);
-
         var pubAckPacket = new MqttPubAckPacket
         {
             PacketIdentifier = publishPacket.PacketIdentifier,

@@ -1,6 +1,6 @@
 # BiharMQTT
 
-**BiharMQTT is a fork of [MQTTnet](https://github.com/dotnet/MQTTnet)** — a high-performance .NET MQTT library — with modifications focused on eliminating heap allocations on the server publish hot path.
+**BiharMQTT is a fork of [MQTTnet](https://github.com/dotnet/MQTTnet)** — a high-performance .NET MQTT library — stripped down to a TCP-only broker with a focus on eliminating heap allocations on the publish hot path.
 
 > Upstream: [dotnet/MQTTnet](https://github.com/dotnet/MQTTnet) · License: MIT
 
@@ -8,95 +8,55 @@
 
 ## What We Changed
 
-### Ring Buffer Message Store
-
-The server now uses a pre-allocated **ring buffer** (`MessageRingBuffer`) for all in-flight message payloads. Every PUBLISH payload is written into the ring buffer exactly once via `memcpy`; all downstream consumers (interceptors, subscriber fan-out, network write) reference that memory region via a ref-counted slot handle. When all consumers finish, the slot is freed and the write head advances.
-
-**Key changes from upstream MQTTnet:**
+The broker has been substantially rewritten. Architecture details are in [`docs/Server-Architecture.md`](docs/Server-Architecture.md). Highlights:
 
 | Area | Change |
 |---|---|
-| **Ring buffer core** | New `MessageRingBuffer`, `MessageSlot`, `MessageSlotMetadata` — pinned `byte[]` with semaphore-based back-pressure and ref-counted slot lifecycle |
-| **Zero-alloc inbound path** | Per-connection reusable body buffer in `MqttChannelAdapter` replaces `ArrayPool` renting; zero-copy payload slice in `MqttBufferReader` avoids decode-time copies |
-| **Direct packet dispatch** | Inbound PUBLISH packets dispatch directly to the ring buffer via `DispatchPublishPacketDirect`, bypassing `MqttApplicationMessage` allocation entirely |
-| **Outbound fan-out** | `DispatchViaRingBuffer` acquires a slot, copies payload once, and fans out to all subscribers sharing the same ring buffer memory; `MqttPacketBusItem.OnTerminated` releases the slot ref |
-| **Buffered injection API** | New `MqttBufferedApplicationMessage` + builder for memory-efficient server-side message injection |
-| **Buffered interceptor** | `InterceptingPublishBufferedEventArgs` provides `ReadOnlyMemory<byte>` payload views directly into ring buffer memory |
-| **Always-on** | The ring buffer is not optional — it is always active. Configure capacity/slots via `MqttServerOptions.RingBufferCapacityBytes` (default 256 MB) and `RingBufferMaxSlots` (default 65536) |
-| **Removed** | `SharedPooledPayloadBuffer` (ArrayPool-based fallback) deleted; `UseRingBuffer` opt-in flag removed |
-| **Packet inspector fix** | `MqttPacketInspector.FillReceiveBuffer` now accepts `(byte[], offset, count)` to avoid writing excess bytes from the reusable body buffer |
+| **Receive path** | `SocketAsyncEventArgs` + per-channel callback state machine in `MqttChannelAdapter`. No `async`/`await`, no `Task` allocation, no state-machine boxing per packet. Cached delegate fields avoid closure alloc. |
+| **Send path** | Sync-only `MqttChannelAdapter.SendPacket` over `Socket.Send` / `SslStream.Write`. The async send pipeline was deleted. |
+| **Sender concurrency** | `MqttSenderPool` — M dedicated background threads (default `Environment.ProcessorCount`) servicing N connected clients via a ready-queue + semaphore. Replaces one-thread-per-client. |
+| **Inline-send fast path** | Producers bypass the per-session bus entirely when the channel send-lock is uncontended, the bus is empty, and the kernel send buffer accepts immediately. Falls back to the bus on contention or backpressure. |
+| **Per-session bus** | Three priority partitions (Health / Control / Data) backed by `PreAllocatedQ<T>` over native memory (`HugeNativeMemoryPool`). No GC interaction on the per-message path. |
+| **Publish interceptor** | `unsafe delegate*<in MqttPublishInterceptArgs, PublishInterceptResult>` static-only function-pointer hook on `MqttServerOptions`. `Allow` / `Consume` / `Reject`. The args type is a `readonly ref struct` — buffers borrowed only for the call. |
+| **Server-side publish** | `MqttServer.Publish(ReadOnlySpan<byte> topic, ReadOnlySequence<byte> payload, …)` — zero-alloc inject API with the same lifetime contract as the interceptor. |
+| **Removed from upstream** | All ASP.NET Core / Kestrel / WebSocket integration; `IMqttServerAdapter` / `IMqttChannelAdapter` interfaces; the entire event/interceptor surface (`InterceptingPublishAsync` & friends); the shared `MessageRingBuffer` (replaced by per-session buses). |
 
-### Allocation Profile (Server Hot Path)
+### Allocation Profile
 
-| Step | Upstream MQTTnet | BiharMQTT |
-|---|---|---|
-| Inbound body read | `ArrayPool.Rent` / `new byte[]` | Per-connection reusable buffer (zero alloc after warmup) |
-| Payload decode | `ReadRemainingData()` → `new byte[]` | `ReadRemainingDataSlice()` → zero-copy segment |
-| `MqttApplicationMessage` | Allocated per message | Skipped on ring buffer fast path |
-| Subscriber payload | Copied per subscriber | Shared ring buffer memory (ref-counted) |
-| Outbound write | `ReadOnlySequence` over copied `byte[]` | `ReadOnlySequence` over ring buffer region |
+Verified via `dotnet-counters` against the bombard test (50 publishers × 1000 msg/s × 10 subscribers ≈ 500k deliveries):
 
-### Configuration
+- Total Gen0 + Gen1 + Gen2 collections: **3** over ~60 s wall.
+- Total GC pause: **~12 ms** over the run.
+- Total allocated: **~27 MB**, ~50 bytes per packet operation.
 
-```csharp
-// Adjust ring buffer size (optional — defaults are 256 MB / 65536 slots)
-var server = new MqttServerOptionsBuilder()
-    .WithRingBuffer(capacityBytes: 128 * 1024 * 1024, maxSlots: 32768)
-    .Build();
-```
+The receive callback chain, sender pool drain, and inline-send fast path are zero-allocation in steady state.
 
 ---
 
-## Original MQTTnet Features
-
-### General
-
-* Async support
-* TLS support for client and server (but not UWP servers)
-* Extensible communication channels (e.g. In-Memory, TCP, TCP+TLS, WS)
-* Lightweight (only the low level implementation of MQTT, no overhead)
-* Performance optimized (processing ~150.000 messages / second)*
-* Uniform API across all supported versions of the MQTT protocol
-* Access to internal trace messages
-* Unit tested (~636 tests)
-* No external dependencies
-
-\* Tested on local machine (Intel i7 8700K) with MQTTnet client and server running in the same process using the TCP
-channel. The app for verification is part of this repository and stored in _/Tests/MQTTnet.TestApp.NetCore_.
-
-### Client
-
-* Communication via TCP (+TLS) or WS (WebSocket) supported
-* Included core _LowLevelMqttClient_ with low level functionality
-* Also included _ManagedMqttClient_ which maintains the connection and subscriptions automatically. Also application
-  messages are queued and re-scheduled for higher QoS levels automatically.
-* Rx support (via another project)
-* Compatible with Microsoft Azure IoT Hub
-
-### Server (broker)
-
-* List of connected clients available
-* Supports connected clients with different protocol versions at the same time
-* Able to publish its own messages (no loopback client required)
-* Able to receive every message (no loopback client required)
-* Extensible client credential validation
-* Retained messages are supported including persisting via interface methods (own implementation required)
-* WebSockets supported (via ASP.NET Core 2.0, separate nuget)
-* A custom message interceptor can be added which allows transforming or extending every received application message
-* Validate subscriptions and deny subscribing of certain topics depending on requesting clients
-
 ## Getting Started
 
-Samples for using MQTTnet are part of this repository. For starters these samples are recommended:
+`Samples/Program.cs` starts a plain TCP broker on port 1883:
 
-- [Connect with a broker](https://github.com/dotnet/MQTTnet/blob/master/Samples/Client/Client_Connection_Samples.cs)
-- [Subscribing to data](https://github.com/dotnet/MQTTnet/blob/master/Samples/Client/Client_Subscribe_Samples.cs)
-- [Publishing data](https://github.com/dotnet/MQTTnet/blob/master/Samples/Client/Client_Publish_Samples.cs)
-- [Host own broker](https://github.com/dotnet/MQTTnet/blob/master/Samples/Server/Server_Simple_Samples.cs)
+```csharp
+var server = new MqttServerOptionsBuilder()
+    .WithDefaultEndpoint()
+    .WithDefaultEndpointPort(1883)
+    .Build();
+
+unsafe { server.PublishInterceptor = &AllowAllInterceptor; }   // optional
+
+using var mqttServer = new MqttServerFactory().CreateMqttServer(server, logger);
+await mqttServer.StartAsync();
+
+static PublishInterceptResult AllowAllInterceptor(in MqttPublishInterceptArgs args)
+    => PublishInterceptResult.Allow;
+```
+
+`TestClient/Program.cs` is a load generator using the upstream MQTTnet client.
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE), same as the upstream MQTTnet project.
+MIT, same as the upstream MQTTnet project.
 
 ## .NET Foundation
 

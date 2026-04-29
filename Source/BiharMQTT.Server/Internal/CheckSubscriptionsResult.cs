@@ -6,10 +6,8 @@ using BiharMQTT.Protocol;
 
 namespace BiharMQTT.Server.Internal;
 
-public sealed class CheckSubscriptionsResult
+public struct CheckSubscriptionsResult
 {
-    public static CheckSubscriptionsResult NotSubscribed { get; } = new CheckSubscriptionsResult();
-
     public bool IsSubscribed { get; set; }
 
     public bool RetainAsPublished { get; set; }

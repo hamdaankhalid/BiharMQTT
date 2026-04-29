@@ -3,7 +3,6 @@
 // See the LICENSE file in the project root for more information.
 
 using System.Buffers;
-using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
@@ -16,23 +15,58 @@ using BiharMQTT.Internal;
 
 namespace BiharMQTT.Adapter;
 
+/// <summary>
+/// Invoked when BeginReceivePacket completes. Exactly one of (packet, error)
+/// is meaningful: error is non-null on failure. <see cref="ReceivedMqttPacket.Empty"/>
+/// signals a clean half-close.
+/// </summary>
+public delegate void ReceivePacketCompletionHandler(ReceivedMqttPacket packet, Exception error);
+
 public sealed class MqttChannelAdapter : Disposable
 {
     const uint ErrorOperationAborted = 0x800703E3;
     const int ReadBufferSize = 4096;
 
+    // Loopback / pre-buffered data can complete every Socket.ReceiveAsync
+    // synchronously — chained recursion would blow the stack on large packets.
+    // Past this depth we hand the next receive to the thread pool to break the chain.
+    const int MaxSyncCompletionChain = 16;
+
+    [ThreadStatic] static int _syncCompletionDepth;
+
     readonly MqttTcpChannel _channel;
     readonly byte[] _fixedHeaderBuffer = new byte[2];
     readonly MqttNetSourceLogger _logger;
-    readonly AsyncLock _syncRoot = new();
+    readonly object _syncRoot = new();
 
-    // Per-connection reusable body buffer. Grows to the high-water mark of
-    // incoming packet sizes and is reused for every subsequent packet on this
-    // connection. No pool contention, no bucket lookup, zero allocation after
-    // warmup. Safe because the receive loop is sequential per connection.
-    byte[] _reusableBodyBuffer = new byte[ReadBufferSize];
+    // Per-connection reusable body buffer rented from ArrayPool. Grows to the
+    // high-water mark of incoming packet sizes and is reused for every subsequent
+    // packet on this connection. Safe because the receive loop is sequential per
+    // connection. Returned to the pool on Dispose; on growth the prior rental
+    // is returned before re-renting.
+    byte[] _reusableBodyBuffer = ArrayPool<byte>.Shared.Rent(ReadBufferSize);
 
     Statistics _statistics; // mutable struct, don't make readonly!
+
+    // ----- Receive state machine fields. Single in-flight receive at a time, so
+    // these are not synchronized. The hot path mutates them inline and re-arms
+    // the channel; cancellation aborts via channel disposal. -----
+
+    ReceivePacketCompletionHandler _packetCallback;
+    // Cached delegates point into instance methods so the per-receive BeginReceive
+    // call passes them without a closure allocation.
+    readonly ReceiveCompletionHandler _onFixedHeaderRead;
+    readonly ReceiveCompletionHandler _onRemainingLengthRead;
+    readonly ReceiveCompletionHandler _onBodyRead;
+
+    int _fhTotalRead;
+    int _rlMultiplier;
+    int _rlValue;
+    int _rlOffset;
+    byte _flags;
+    int _bodyLength;
+    int _bodyOffset;
+    int _totalReceivedHeaderBytes;
 
     public MqttChannelAdapter(MqttTcpChannel channel, MqttPacketFormatterAdapter packetFormatterAdapter, IMqttNetLogger logger)
     {
@@ -43,6 +77,10 @@ public sealed class MqttChannelAdapter : Disposable
         ArgumentNullException.ThrowIfNull(logger);
 
         _logger = logger.WithSource(nameof(MqttChannelAdapter));
+
+        _onFixedHeaderRead = OnFixedHeaderRead;
+        _onRemainingLengthRead = OnRemainingLengthRead;
+        _onBodyRead = OnBodyRead;
     }
 
     public bool AllowPacketFragmentation { get; set; } = true;
@@ -70,53 +108,84 @@ public sealed class MqttChannelAdapter : Disposable
         return Task.CompletedTask;
     }
 
-    public async Task<ReceivedMqttPacket> ReceivePacketAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Begin receiving the next MQTT packet from the channel. The callback is
+    /// invoked exactly once when a full packet has been read, the peer closed
+    /// the connection (delivered as <see cref="ReceivedMqttPacket.Empty"/>),
+    /// or an error occurred. Caller must not issue another BeginReceivePacket
+    /// until the callback fires.
+    /// </summary>
+    public void BeginReceivePacket(ReceivePacketCompletionHandler callback)
+    {
+        ArgumentNullException.ThrowIfNull(callback);
+        ThrowIfDisposed();
+
+        _packetCallback = callback;
+
+        ResetReceiveState();
+        BeginReadFixedHeader();
+    }
+
+    /// <summary>
+    /// Task-shaped wrapper around <see cref="BeginReceivePacket"/>. Used for
+    /// the connect handshake where we read exactly one packet and want
+    /// CancellationToken-driven timeout. Allocates a TCS per call — fine for
+    /// the cold path, hot loop should use BeginReceivePacket directly.
+    /// </summary>
+    public Task<ReceivedMqttPacket> ReceivePacketAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ThrowIfDisposed();
 
+        var tcs = new TaskCompletionSource<ReceivedMqttPacket>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // Cancellation aborts by closing the channel — pending Receive completes
+        // with OperationAborted, which we surface as Empty.
+        CancellationTokenRegistration ctr = default;
+        if (cancellationToken.CanBeCanceled)
+        {
+            ctr = cancellationToken.Register(static state =>
+            {
+                var self = (MqttChannelAdapter)state;
+                try { self.Dispose(); } catch (ObjectDisposedException) { }
+            }, this);
+        }
+
         try
         {
-            ReceivedMqttPacket receivedPacket;
-            var receivedPacketTask = ReceiveAsync(cancellationToken);
-            if (receivedPacketTask.IsCompleted)
+            BeginReceivePacket((packet, error) =>
             {
-                receivedPacket = receivedPacketTask.Result;
-            }
-            else
-            {
-                receivedPacket = await receivedPacketTask.ConfigureAwait(false);
-            }
+                ctr.Dispose();
 
-            if (receivedPacket.TotalLength == 0 || cancellationToken.IsCancellationRequested)
-            {
-                return ReceivedMqttPacket.Empty;
-            }
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    tcs.TrySetResult(ReceivedMqttPacket.Empty);
+                    return;
+                }
 
-            Interlocked.Add(ref _statistics._bytesSent, receivedPacket.TotalLength);
+                if (error != null)
+                {
+                    if (TryClassifyAsClean(error))
+                    {
+                        tcs.TrySetResult(ReceivedMqttPacket.Empty);
+                    }
+                    else
+                    {
+                        tcs.TrySetException(WrapException(error));
+                    }
+                    return;
+                }
 
-            if (PacketFormatterAdapter.ProtocolVersion == MqttProtocolVersion.Unknown)
-            {
-                PacketFormatterAdapter.DetectProtocolVersion(receivedPacket);
-            }
-
-            return receivedPacket;
+                tcs.TrySetResult(packet);
+            });
         }
-        catch (OperationCanceledException)
+        catch (Exception ex)
         {
-        }
-        catch (ObjectDisposedException)
-        {
-        }
-        catch (Exception exception)
-        {
-            if (!WrapAndThrowException(exception))
-            {
-                throw;
-            }
+            ctr.Dispose();
+            tcs.TrySetException(ex);
         }
 
-        return ReceivedMqttPacket.Empty;
+        return tcs.Task;
     }
 
     public void ResetStatistics()
@@ -124,51 +193,104 @@ public sealed class MqttChannelAdapter : Disposable
         _statistics.Reset();
     }
 
-    public async Task SendPacketAsync(MqttPacketBuffer packetBuffer, CancellationToken cancellationToken)
+
+    // Cold-path send for packets that come out of the encoder as
+    // (header, payload) pairs (CONNACK during handshake, DISCONNECT on shutdown).
+    // The hot path uses the inlined-buffer overload below.
+    public void SendPacket(Memory<byte> header, ReadOnlySequence<byte> payload, CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
 
-        // This lock makes sure that multiple threads can send packets at the same time.
-        // This is required when a disconnect is sent from another thread while the
-        // worker thread is still sending publish packets etc.
-        using (await _syncRoot.EnterAsync(cancellationToken).ConfigureAwait(false))
+        // Serialize writes against the hot-path SendPacketsLoop so a disconnect
+        // sent from another thread cannot interleave bytes with an in-flight publish.
+        lock (_syncRoot)
         {
-            // Check for cancellation here again because "WaitAsync" might take some time.
             cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                _channel.Write(header);
+                foreach (ReadOnlyMemory<byte> segment in payload)
+                {
+                    _channel.Write(segment);
+                }
+                Interlocked.Add(ref _statistics._bytesReceived, header.Length + payload.Length);
+            }
+            catch (Exception exception)
+            {
+                if (!WrapAndThrowException(exception))
+                {
+                    throw;
+                }
+            }
+            finally
+            {
+                PacketFormatterAdapter.Cleanup();
+            }
+        }
+    }
+
+    // Inline-send fast path. Called by producers (Session enqueue) before they
+    // hand a packet to the bus + sender pool. Succeeds only when:
+    //   1) the channel send-lock is uncontended (TryEnter),
+    //   2) the bus is empty — otherwise we'd skip past queued packets and break FIFO,
+    //   3) the kernel send buffer has room (Socket.Poll SelectWrite),
+    //   4) the packet fits in InlineMaxBytes — bigger goes through the queue so a
+    //      large slow write doesn't pin the producer's thread.
+    // On success, bytes are on the wire before this returns and the bus is bypassed.
+    // Any failure (lock contention, non-empty bus, full kernel buffer, oversized
+    // packet, write exception) returns false and the caller queues normally.
+    const int InlineMaxBytes = 16 * 1024;
+
+    public bool TrySendInline(ref MqttPacketBuffer buffer, MqttPacketBus bus)
+    {
+        if (IsDisposed) return false;
+        if (buffer.Length > InlineMaxBytes) return false;
+        if (!_channel.IsWritable()) return false;
+
+        if (!Monitor.TryEnter(_syncRoot)) return false;
+        try
+        {
+            // Re-check inside the lock: while we were entering, the worker may have
+            // started/finished a drain or another producer queued.
+            if (!bus.IsEmpty) return false;
+            if (!_channel.IsWritable()) return false;
 
             try
             {
-                // This is the cold path. Clients should be supporting fragmentation of large packets... this has unavoidable performance implications
-                if (packetBuffer.Payload.Length == 0 || !AllowPacketFragmentation)
+                _channel.Write(buffer.Packet);
+                foreach (ReadOnlyMemory<byte> segment in buffer.Payload)
                 {
-                    var joined = packetBuffer.Join();
-                    var writeVt = _channel.WriteAsync(joined.AsMemory());
-                    if (!writeVt.IsCompletedSuccessfully)
-                    {
-                        await writeVt.ConfigureAwait(false);
-                    }
+                    _channel.Write(segment);
                 }
-                else
-                {
-                    // Write header+metadata segment
-                    var headerVt = _channel.WriteAsync(packetBuffer.Packet.AsMemory());
-                    if (!headerVt.IsCompletedSuccessfully)
-                    {
-                        await headerVt.ConfigureAwait(false);
-                    }
+                Interlocked.Add(ref _statistics._bytesReceived, buffer.Length);
+                return true;
+            }
+            catch
+            {
+                // Any send exception — fall back to queue path so the worker's
+                // standard error handling logs and tears down the connection.
+                return false;
+            }
+        }
+        finally
+        {
+            Monitor.Exit(_syncRoot);
+        }
+    }
 
-                    // Write payload segments
-                    foreach (ReadOnlyMemory<byte> segment in packetBuffer.Payload)
-                    {
-                        ValueTask segVt = _channel.WriteAsync(segment);
-                        if (!segVt.IsCompletedSuccessfully)
-                        {
-                            await segVt.ConfigureAwait(false);
-                        }
-                    }
-                }
+    public void SendPacket(Memory<byte> fullPacketInlined, CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
 
-                Interlocked.Add(ref _statistics._bytesReceived, packetBuffer.Length);
+        // Serialize writes against the cold-path overload above.
+        lock (_syncRoot)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                // All our packet data is inlined in our Memory<byte> buffer so we can write it in a single call
+                _channel.Write(fullPacketInlined);
+                Interlocked.Add(ref _statistics._bytesReceived, fullPacketInlined.Length);
             }
             catch (Exception exception)
             {
@@ -189,185 +311,253 @@ public sealed class MqttChannelAdapter : Disposable
         if (disposing)
         {
             _channel.Dispose();
-            _syncRoot.Dispose();
+            ArrayPool<byte>.Shared.Return(_reusableBodyBuffer);
+            PacketFormatterAdapter.Dispose();
         }
 
         base.Dispose(disposing);
     }
 
-    async Task<int> ReadBodyLengthAsync(byte initialEncodedByte, CancellationToken cancellationToken)
+    void ResetReceiveState()
     {
-        var offset = 0;
-        var multiplier = 128;
-        var value = initialEncodedByte & 127;
-        int encodedByte = initialEncodedByte;
-
-        while ((encodedByte & 128) != 0)
-        {
-            offset++;
-            if (offset > 3)
-            {
-                throw new MqttProtocolViolationException("Remaining length is invalid.");
-            }
-
-            if (cancellationToken.IsCancellationRequested)
-            {
-                return 0;
-            }
-
-            // Reuse byte 1 of the fixed header buffer as scratch space for single-byte reads.
-            // This is safe because ReadBodyLengthAsync is only called after the fixed header
-            // has been fully read and its values extracted into locals.
-            var readVt = _channel.ReadAsync(_fixedHeaderBuffer.AsMemory(1, 1));
-            int readCount = readVt.IsCompletedSuccessfully ? readVt.Result : await readVt.ConfigureAwait(false);
-
-            if (cancellationToken.IsCancellationRequested)
-            {
-                return 0;
-            }
-
-            if (readCount == 0)
-            {
-                return 0;
-            }
-
-            encodedByte = _fixedHeaderBuffer[1];
-
-            value += (encodedByte & 127) * multiplier;
-            multiplier *= 128;
-        }
-
-        return value;
+        _fhTotalRead = 0;
+        _rlMultiplier = 128;
+        _rlValue = 0;
+        _rlOffset = 0;
+        _flags = 0;
+        _bodyLength = 0;
+        _bodyOffset = 0;
+        _totalReceivedHeaderBytes = 0;
     }
 
-    async Task<ReadFixedHeaderResult> ReadFixedHeaderAsync(CancellationToken cancellationToken)
+    void BeginReadFixedHeader()
     {
-        // The MQTT fixed header contains 1 byte of flags and at least 1 byte for the remaining data length.
-        // So in all cases at least 2 bytes must be read for a complete MQTT packet.
-        int totalBytesRead = 0;
-        while (totalBytesRead < 2)
+        try
         {
-            // Check two times for cancellation because the call to ReadAsync might block for some time.
-            if (cancellationToken.IsCancellationRequested)
-            {
-                return ReadFixedHeaderResult.Canceled;
-            }
-
-            int bytesRead;
-            try
-            {
-                var readVt = _channel.ReadAsync(_fixedHeaderBuffer.AsMemory(totalBytesRead, 2 - totalBytesRead));
-                bytesRead = readVt.IsCompletedSuccessfully ? readVt.Result : await readVt.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                return ReadFixedHeaderResult.Canceled;
-            }
-            catch (SocketException)
-            {
-                return ReadFixedHeaderResult.ConnectionClosed;
-            }
-
-            if (cancellationToken.IsCancellationRequested)
-            {
-                return ReadFixedHeaderResult.Canceled;
-            }
-
-            if (bytesRead == 0)
-            {
-                return ReadFixedHeaderResult.ConnectionClosed;
-            }
-
-            totalBytesRead += bytesRead;
+            _channel.BeginReceive(_fixedHeaderBuffer.AsMemory(_fhTotalRead, 2 - _fhTotalRead), _onFixedHeaderRead);
         }
-
-        var hasRemainingLength = _fixedHeaderBuffer[1] != 0;
-        if (!hasRemainingLength)
+        catch (Exception ex)
         {
-            return new ReadFixedHeaderResult
-            {
-                FixedHeader = new MqttFixedHeader(_fixedHeaderBuffer[0], 0, (ushort)totalBytesRead)
-            };
+            DeliverError(ex);
         }
-
-        ushort bodyLength = (ushort)await ReadBodyLengthAsync(_fixedHeaderBuffer[1], cancellationToken).ConfigureAwait(false);
-        if (bodyLength == 0)
-        {
-            return ReadFixedHeaderResult.ConnectionClosed;
-        }
-
-        totalBytesRead += bodyLength;
-        return new ReadFixedHeaderResult
-        {
-            FixedHeader = new MqttFixedHeader(_fixedHeaderBuffer[0], bodyLength, (ushort)totalBytesRead)
-        };
     }
 
-    async Task<ReceivedMqttPacket> ReceiveAsync(CancellationToken cancellationToken)
+    void OnFixedHeaderRead(int bytesRead, Exception error)
     {
-        if (cancellationToken.IsCancellationRequested)
+        if (error != null) { DeliverError(error); return; }
+        if (bytesRead == 0) { DeliverEmpty(); return; }
+
+        _fhTotalRead += bytesRead;
+        if (_fhTotalRead < 2)
         {
-            return ReceivedMqttPacket.Empty;
+            ContinueOrPunt(BeginReadFixedHeader);
+            return;
         }
 
-        var readFixedHeaderResult = await ReadFixedHeaderAsync(cancellationToken).ConfigureAwait(false);
+        _flags = _fixedHeaderBuffer[0];
+        _totalReceivedHeaderBytes = 2;
 
-        if (cancellationToken.IsCancellationRequested)
+        // Fast path: top bit of the second byte clear means the remaining-length
+        // is a single byte and we already have it.
+        if ((_fixedHeaderBuffer[1] & 0x80) == 0)
         {
-            return ReceivedMqttPacket.Empty;
+            _bodyLength = _fixedHeaderBuffer[1];
+            ProceedToBodyOrFinish();
+            return;
         }
 
-        if (readFixedHeaderResult.IsConnectionClosed)
+        _rlValue = _fixedHeaderBuffer[1] & 0x7F;
+        ContinueOrPunt(BeginReadRemainingLength);
+    }
+
+    void BeginReadRemainingLength()
+    {
+        try
         {
-            return ReceivedMqttPacket.Empty;
+            // Reuse byte 1 of the fixed-header buffer as a single-byte scratch
+            // slot — safe because we've already extracted what we needed from it.
+            _channel.BeginReceive(_fixedHeaderBuffer.AsMemory(1, 1), _onRemainingLengthRead);
+        }
+        catch (Exception ex)
+        {
+            DeliverError(ex);
+        }
+    }
+
+    void OnRemainingLengthRead(int bytesRead, Exception error)
+    {
+        if (error != null) { DeliverError(error); return; }
+        if (bytesRead == 0) { DeliverEmpty(); return; }
+
+        _rlOffset++;
+        if (_rlOffset > 3)
+        {
+            DeliverError(new MqttProtocolViolationException("Remaining length is invalid."));
+            return;
         }
 
-        var fixedHeader = readFixedHeaderResult.FixedHeader;
-        if (fixedHeader.RemainingLength == 0)
+        var encoded = _fixedHeaderBuffer[1];
+        _rlValue += (encoded & 0x7F) * _rlMultiplier;
+        _rlMultiplier *= 128;
+        _totalReceivedHeaderBytes++;
+
+        if ((encoded & 0x80) != 0)
         {
-            return new ReceivedMqttPacket(fixedHeader.Flags, EmptyBuffer.ArraySegment, 2);
+            ContinueOrPunt(BeginReadRemainingLength);
+            return;
         }
 
-        var bodyLength = fixedHeader.RemainingLength;
+        _bodyLength = _rlValue;
+        ProceedToBodyOrFinish();
+    }
 
-        // Reuse the per-connection body buffer; grow it if this packet is larger
-        // than anything we've seen on this connection so far.
-        if (_reusableBodyBuffer.Length < bodyLength)
+    void ProceedToBodyOrFinish()
+    {
+        if (_bodyLength == 0)
         {
-            _reusableBodyBuffer = GC.AllocateUninitializedArray<byte>(bodyLength);
+            DeliverPacket(new ReceivedMqttPacket(_flags, EmptyBuffer.ArraySegment, _totalReceivedHeaderBytes));
+            return;
         }
 
-        var body = _reusableBodyBuffer;
-
-        var bodyOffset = 0;
-        var chunkSize = Math.Min(ReadBufferSize, (int)bodyLength);
-
-        do
+        // Grow the reusable body buffer to fit; on growth the prior rental is
+        // returned to the pool before we rent the larger one.
+        if (_reusableBodyBuffer.Length < _bodyLength)
         {
-            var bytesLeft = body.Length - bodyOffset;
-            if (chunkSize > bytesLeft)
+            ArrayPool<byte>.Shared.Return(_reusableBodyBuffer);
+            _reusableBodyBuffer = ArrayPool<byte>.Shared.Rent(_bodyLength);
+        }
+
+        ContinueOrPunt(BeginReadBody);
+    }
+
+    void BeginReadBody()
+    {
+        try
+        {
+            // Bound by *this packet's* remaining bytes, not buffer capacity:
+            // the reused buffer can be larger after a previous big packet, and
+            // over-reading would eat bytes from the next packet and desync.
+            var chunkSize = Math.Min(ReadBufferSize, _bodyLength - _bodyOffset);
+            _channel.BeginReceive(_reusableBodyBuffer.AsMemory(_bodyOffset, chunkSize), _onBodyRead);
+        }
+        catch (Exception ex)
+        {
+            DeliverError(ex);
+        }
+    }
+
+    void OnBodyRead(int bytesRead, Exception error)
+    {
+        if (error != null) { DeliverError(error); return; }
+        if (bytesRead == 0) { DeliverEmpty(); return; }
+
+        _bodyOffset += bytesRead;
+        if (_bodyOffset < _bodyLength)
+        {
+            ContinueOrPunt(BeginReadBody);
+            return;
+        }
+
+        var bodySegment = new ArraySegment<byte>(_reusableBodyBuffer, 0, _bodyLength);
+        DeliverPacket(new ReceivedMqttPacket(_flags, bodySegment, _totalReceivedHeaderBytes + _bodyLength));
+    }
+
+    // Recurse for sync completions but break the stack chain past the threshold.
+    // Keeps the hot path on the calling thread (cache-friendly) while still
+    // bounded against pathological loopback streams.
+    static void ContinueOrPunt(Action next)
+    {
+        if (_syncCompletionDepth < MaxSyncCompletionChain)
+        {
+            _syncCompletionDepth++;
+            try { next(); }
+            finally { _syncCompletionDepth--; }
+        }
+        else
+        {
+            // Hand off to the thread pool so we unwind the current stack.
+            ThreadPool.UnsafeQueueUserWorkItem(static state => ((Action)state)(), next);
+        }
+    }
+
+    void DeliverPacket(ReceivedMqttPacket packet)
+    {
+        Interlocked.Add(ref _statistics._bytesSent, packet.TotalLength);
+
+        if (PacketFormatterAdapter.ProtocolVersion == MqttProtocolVersion.Unknown)
+        {
+            PacketFormatterAdapter.DetectProtocolVersion(ref packet);
+        }
+
+        var cb = _packetCallback;
+        _packetCallback = null;
+        cb?.Invoke(packet, null);
+    }
+
+    void DeliverEmpty()
+    {
+        var cb = _packetCallback;
+        _packetCallback = null;
+        cb?.Invoke(ReceivedMqttPacket.Empty, null);
+    }
+
+    void DeliverError(Exception ex)
+    {
+        var cb = _packetCallback;
+        _packetCallback = null;
+        cb?.Invoke(ReceivedMqttPacket.Empty, ex);
+    }
+
+    static bool TryClassifyAsClean(Exception ex)
+    {
+        // Treat clean shutdowns and aborts as empty rather than exceptions so
+        // the caller's normal "TotalLength == 0" path runs.
+        if (ex is OperationCanceledException || ex is ObjectDisposedException) return true;
+
+        if (ex is SocketException se)
+        {
+            return se.SocketErrorCode == SocketError.OperationAborted
+                || se.SocketErrorCode == SocketError.ConnectionAborted
+                || se.SocketErrorCode == SocketError.ConnectionReset;
+        }
+
+        return false;
+    }
+
+    static Exception WrapException(Exception exception)
+    {
+        if (exception is MqttCommunicationException
+            || exception is MqttProtocolViolationException
+            || exception is OperationCanceledException
+            || exception is MqttCommunicationTimedOutException)
+        {
+            return exception;
+        }
+
+        if (exception is IOException && exception.InnerException is SocketException innerException)
+        {
+            exception = innerException;
+        }
+
+        if (exception is SocketException socketException)
+        {
+            if (socketException.SocketErrorCode == SocketError.OperationAborted)
             {
-                chunkSize = bytesLeft;
+                return new OperationCanceledException();
             }
 
-            var readVt = _channel.ReadAsync(body.AsMemory(bodyOffset, chunkSize));
-            int readBytes = readVt.IsCompletedSuccessfully ? readVt.Result : await readVt.ConfigureAwait(false);
-
-            if (cancellationToken.IsCancellationRequested)
+            if (socketException.SocketErrorCode == SocketError.ConnectionAborted)
             {
-                return ReceivedMqttPacket.Empty;
+                return new MqttCommunicationException(socketException);
             }
+        }
 
-            if (readBytes == 0)
-            {
-                return ReceivedMqttPacket.Empty;
-            }
+        if (exception is COMException comException && (uint)comException.HResult == ErrorOperationAborted)
+        {
+            return new OperationCanceledException();
+        }
 
-            bodyOffset += readBytes;
-        } while (bodyOffset < bodyLength);
-
-        var bodySegment = new ArraySegment<byte>(body, 0, bodyLength);
-        return new ReceivedMqttPacket(fixedHeader.Flags, bodySegment, fixedHeader.TotalLength);
+        return new MqttCommunicationException(exception);
     }
 
     static bool WrapAndThrowException(Exception exception)

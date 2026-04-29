@@ -144,6 +144,7 @@ public sealed class MqttTcpServerListener : IDisposable
                     continue;
                 }
 
+                // Handling is pyt off to another task always
                 _ = Task.Factory.StartNew(() => TryHandleClientConnectionAsync(clientSocket), cancellationToken, TaskCreationOptions.PreferFairness, TaskScheduler.Default).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
@@ -224,10 +225,10 @@ public sealed class MqttTcpServerListener : IDisposable
             var tcpChannel = new MqttTcpChannel(clientSocket, sslStream, _localEndPoint, remoteEndPoint, clientCertificate);
             ownershipTransferred = true;
 
-            var bufferWriter = new MqttBufferWriter(_serverOptions.WriterBufferSize, _serverOptions.WriterBufferSizeMax);
+            var bufferWriter = new MqttBufferWriter(_serverOptions.WriterBufferSize);
             var packetFormatterAdapter = new MqttPacketFormatterAdapter(bufferWriter);
 
-            using var clientAdapter = new MqttChannelAdapter(tcpChannel, packetFormatterAdapter, _rootLogger);
+                using var clientAdapter = new MqttChannelAdapter(tcpChannel, packetFormatterAdapter, _rootLogger);
             clientAdapter.AllowPacketFragmentation = _options.AllowPacketFragmentation;
             await _clientHandler(clientAdapter).ConfigureAwait(false);
         }

@@ -7,9 +7,11 @@ using BiharMQTT.Protocol;
 
 namespace BiharMQTT.Formatter.V5;
 
-public sealed class MqttV5PropertiesWriter
+public sealed class MqttV5PropertiesWriter : IDisposable
 {
     readonly MqttBufferWriter _bufferWriter;
+    private bool disposedValue;
+
 
     public MqttV5PropertiesWriter(MqttBufferWriter bufferWriter)
     {
@@ -340,4 +342,35 @@ public sealed class MqttV5PropertiesWriter
         _bufferWriter.WriteByte((byte)id);
         _bufferWriter.WriteVariableByteInteger(value);
     }
+
+    private void Dispose(bool disposing)
+    {
+        if (!disposedValue)
+        {
+            if (disposing)
+            {
+                // TODO: dispose managed state (managed objects)
+                _bufferWriter.Dispose();
+            }
+
+            // TODO: free unmanaged resources (unmanaged objects) and override finalizer
+            // TODO: set large fields to null
+            disposedValue = true;
+        }
+    }
+
+    // // TODO: override finalizer only if 'Dispose(bool disposing)' has code to free unmanaged resources
+    // ~MqttV5PropertiesWriter()
+    // {
+    //     // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
+    //     Dispose(disposing: false);
+    // }
+
+    public void Dispose()
+    {
+        // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
+        Dispose(disposing: true);
+        GC.SuppressFinalize(this);
+    }
+
 }

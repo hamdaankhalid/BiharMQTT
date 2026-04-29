@@ -10,12 +10,20 @@ using BiharMQTT.Protocol;
 
 namespace BiharMQTT.Formatter.V5;
 
-public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
+public sealed class MqttV5PacketEncoder : IDisposable
 {
     const int FixedHeaderSize = 1;
 
-    readonly MqttBufferWriter _bufferWriter = bufferWriter ?? throw new ArgumentNullException(nameof(bufferWriter));
-    readonly MqttV5PropertiesWriter _propertiesWriter = new(new MqttBufferWriter(1024, 4096));
+    readonly MqttBufferWriter _bufferWriter;
+    readonly MqttV5PropertiesWriter _propertiesWriter = new(new MqttBufferWriter(Constants.PerBufferWriterMemoryAllocatedbytes));
+    private bool disposedValue;
+
+
+    public MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
+    {
+        _bufferWriter = bufferWriter;
+    }
+
 
     public MqttPacketBuffer Encode(ref MqttConnectPacket packet)
     {
@@ -41,7 +49,7 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
     public MqttPacketBuffer Encode(ref MqttPublishPacket packet)
     {
         BeginEncode();
-        var fixedHeader = EncodePublishPacket(ref packet);
+        byte fixedHeader = EncodePublishPacket(ref packet);
         return FinalizePacket(fixedHeader, packet.Payload);
     }
 
@@ -586,4 +594,36 @@ public sealed class MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
             throw new MqttProtocolViolationException($"Packet identifier is not set for {packetTypeName}.");
         }
     }
+
+    private void Dispose(bool disposing)
+    {
+        if (!disposedValue)
+        {
+            if (disposing)
+            {
+                // TODO: dispose managed state (managed objects)
+                _bufferWriter.Dispose();
+                _propertiesWriter.Dispose();
+            }
+
+            // TODO: free unmanaged resources (unmanaged objects) and override finalizer
+            // TODO: set large fields to null
+            disposedValue = true;
+        }
+    }
+
+    // // TODO: override finalizer only if 'Dispose(bool disposing)' has code to free unmanaged resources
+    // ~MqttV5PacketEncoder()
+    // {
+    //     // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
+    //     Dispose(disposing: false);
+    // }
+
+    public void Dispose()
+    {
+        // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
+        Dispose(disposing: true);
+        GC.SuppressFinalize(this);
+    }
+
 }

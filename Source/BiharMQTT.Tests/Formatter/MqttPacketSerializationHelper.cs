@@ -22,7 +22,7 @@ internal static class MqttPacketSerializationHelper
         return buffer.Join();
     }
 
-    public static object DecodePacket(ArraySegment<byte> raw, MqttProtocolVersion version)
+    public static object DecodePacket(in ArraySegment<byte> raw, MqttProtocolVersion version)
     {
         ParseRaw(raw, out var header, out var body);
         var packetType = (MqttControlPacketType)(header >> 4);
@@ -56,9 +56,10 @@ internal static class MqttPacketSerializationHelper
         return (T)decoded;
     }
 
+    // Only used in tests
     static MqttV5PacketEncoder CreateEncoder()
     {
-        return new MqttV5PacketEncoder(new MqttBufferWriter(4096, 65535));
+        return new MqttV5PacketEncoder(new MqttBufferWriter(4096));
     }
 
     static MqttPacketBuffer EncodeWithEncoder<T>(MqttV5PacketEncoder encoder, T packet) where T : struct
@@ -129,7 +130,7 @@ internal static class MqttPacketSerializationHelper
         throw new NotSupportedException($"Packet type {typeof(T).Name} is not supported.");
     }
 
-    static void ParseRaw(ArraySegment<byte> raw, out byte header, out ArraySegment<byte> body)
+    static void ParseRaw(in ArraySegment<byte> raw, out byte header, out ArraySegment<byte> body)
     {
         var array = raw.Array!;
         var offset = raw.Offset;

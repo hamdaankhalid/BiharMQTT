@@ -8,7 +8,7 @@ using BiharMQTT.Formatter.V5;
 
 namespace BiharMQTT.Formatter;
 
-public sealed class MqttPacketFormatterAdapter
+public sealed class MqttPacketFormatterAdapter : IDisposable
 {
     public static ReadOnlySpan<byte> MqttPrefix => "MQTT"u8;
 
@@ -43,12 +43,17 @@ public sealed class MqttPacketFormatterAdapter
         _formatter.Cleanup();
     }
 
-    public void DetectProtocolVersion(ReceivedMqttPacket receivedMqttPacket)
+    public void Dispose()
     {
-        ProtocolVersion = ParseProtocolVersion(receivedMqttPacket);
+        _formatter.Dispose();
     }
 
-    MqttProtocolVersion ParseProtocolVersion(ReceivedMqttPacket receivedMqttPacket)
+    public void DetectProtocolVersion(ref ReceivedMqttPacket receivedMqttPacket)
+    {
+        ProtocolVersion = ParseProtocolVersion(ref receivedMqttPacket);
+    }
+
+    MqttProtocolVersion ParseProtocolVersion(ref ReceivedMqttPacket receivedMqttPacket)
     {
         if (receivedMqttPacket.Body.Count < 7)
         {

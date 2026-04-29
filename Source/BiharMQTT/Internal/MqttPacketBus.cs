@@ -8,15 +8,10 @@ namespace BiharMQTT.Internal;
 
 public sealed class MqttPacketBus : IDisposable
 {
-    readonly LinkedList<MqttPacketBusItem>[] _partitions =
-    [
-        [],
-        [],
-        []
-    ];
-
-    readonly AsyncSignal _signal = new();
-    readonly object _syncRoot = new();
+    readonly HugeNativeMemoryPool _memoryPool;
+    readonly PreAllocatedQ<MqttPacketBuffer>[] _partitions;
+    // lock per partition
+    readonly object[] _locks;
 
     int _activePartition = (int)MqttPacketBusPartition.Health;
 
@@ -24,130 +19,94 @@ public sealed class MqttPacketBus : IDisposable
     {
         get
         {
-            lock (_syncRoot)
+            int count = 0;
+            for (int i = 0; i < _partitions.Length; i++)
             {
-                var count = 0;
-                for (var i = 0; i < _partitions.Length; i++)
+                lock (_locks[i])
                 {
                     count += _partitions[i].Count;
                 }
-                return count;
             }
+            return count;
+        }
+    }
+
+    public bool IsEmpty => TotalItemsCount == 0;
+
+    public MqttPacketBus(HugeNativeMemoryPool memoryPool)
+    {
+        _memoryPool = memoryPool;
+        _partitions = new PreAllocatedQ<MqttPacketBuffer>[3];
+        _locks = new object[3];
+        for (int i = 0; i < _partitions.Length; i++)
+        {
+            _partitions[i] = new PreAllocatedQ<MqttPacketBuffer>(Constants.PreAllocatedQMemoryKb * 1024, _memoryPool);
+            _locks[i] = new();
         }
     }
 
     public void Clear()
     {
-        lock (_syncRoot)
+        for (var i = 0; i < _partitions.Length; i++)
         {
-            foreach (var partition in _partitions)
-            {
-                partition.Clear();
-            }
+            lock (_locks[i]) { _partitions[i].Clear(); }
         }
     }
 
-    public async Task<MqttPacketBusItem> DequeueItemAsync(CancellationToken cancellationToken)
+    // Non-blocking dequeue. Round-robins partitions for fairness across
+    // Health/Control/Data so a flood of data packets cannot starve health.
+    // Caller is the multiplexed sender pool, which signals readiness via a
+    // separate per-client gate, so this method does not park anywhere.
+    public bool TryDequeueItem(Memory<byte> dest, out int bytesWritten)
     {
-        while (!cancellationToken.IsCancellationRequested)
+        bytesWritten = 0;
+
+        for (var i = 0; i < _partitions.Length; i++)
         {
-            lock (_syncRoot)
+            MoveActivePartition();
+
+            PreAllocatedQ<MqttPacketBuffer> activePartition = _partitions[_activePartition];
+            lock (_locks[_activePartition])
             {
-                for (var i = 0; i < 3; i++)
+                if (activePartition.TryRemoveFirst(dest.Span, out bytesWritten))
                 {
-                    // Iterate through the partitions in order to ensure processing of health packets
-                    // even if lots of data packets are enqueued.
-
-                    // Partition | Messages (left = oldest).
-                    // DATA      | [#]#########################
-                    // CONTROL   | [#]#############
-                    // HEALTH    | [#]####
-
-                    // In this sample the 3 oldest messages from the partitions are processed in a row.
-                    // Then the next 3 from all 3 partitions.
-
-                    MoveActivePartition();
-
-                    var activePartition = _partitions[_activePartition];
-
-                    if (activePartition.First != null)
-                    {
-                        var item = activePartition.First;
-                        activePartition.RemoveFirst();
-
-                        return item.Value;
-                    }
+                    return true;
                 }
-            }
-
-            // No partition contains data so that we have to wait and put
-            // the worker back to the thread pool.
-            try
-            {
-                await _signal.WaitAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (ObjectDisposedException)
-            {
-                // The cancelled token should "hide" the disposal of the signal.
-                cancellationToken.ThrowIfCancellationRequested();
-                throw;
             }
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
-
-        throw new InvalidOperationException("MqttPacketBus is broken.");
+        return false;
     }
 
     public void Dispose()
     {
-        _signal.Dispose();
-    }
-
-    public MqttPacketBusItem? DropFirstItem(MqttPacketBusPartition partition)
-    {
-        lock (_syncRoot)
+        foreach (var partition in _partitions)
         {
-            var partitionInstance = _partitions[(int)partition];
-
-            if (partitionInstance.Count > 0)
-            {
-                var firstItem = partitionInstance.First!.Value;
-                partitionInstance.RemoveFirst();
-
-                return firstItem;
-            }
-        }
-
-        return null;
-    }
-
-    public void EnqueueItem(ref MqttPacketBusItem item, MqttPacketBusPartition partition)
-    {
-        lock (_syncRoot)
-        {
-            _partitions[(int)partition].AddLast(item);
-            _signal.Set();
+            partition.Clear();
+            partition.Dispose();
         }
     }
 
-    public List<MqttPacketBuffer> ExportPackets(MqttPacketBusPartition partition)
+    public void DropFirstItem(MqttPacketBusPartition partition)
     {
-        lock (_syncRoot)
+        lock (_locks[(int)partition])
         {
-            var source = _partitions[(int)partition];
-            var result = new List<MqttPacketBuffer>(source.Count);
-            foreach (var item in source)
-            {
-                result.Add(item.PacketBuffer);
-            }
-            return result;
+            _partitions[(int)partition].DropFirstItem();
+        }
+    }
+
+    public void EnqueueItem(ref MqttPacketBuffer item, MqttPacketBusPartition partition)
+    {
+        // here I want to provide a single Span down into AddLast to avoid allocations
+        lock (_locks[(int)partition])
+        {
+            _partitions[(int)partition].AddLast(ref item);
         }
     }
 
     public int PartitionItemsCount(MqttPacketBusPartition partition)
     {
-        lock (_syncRoot)
+        lock (_locks[(int)partition])
         {
             return _partitions[(int)partition].Count;
         }

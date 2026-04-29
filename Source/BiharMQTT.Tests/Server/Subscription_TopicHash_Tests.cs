@@ -2,6 +2,7 @@ using System.Collections;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using BiharMQTT.Internal;
 using BiharMQTT.Packets;
 using BiharMQTT.Protocol;
 using BiharMQTT.Server;
@@ -381,18 +382,18 @@ public sealed class SubscriptionTopicHashTests : IDisposable
     }
 
     [TestMethod]
-    public async Task Match_Hash_Test_Search_MultiWildcard()
+    public void Match_Hash_Test_Search_MultiWildcard()
     {
-        var topics = await PrepareTopicHashSubscriptions(TopicHashSelector.MultiWildcard);
+        var topics = PrepareTopicHashSubscriptions(TopicHashSelector.MultiWildcard);
         var matchCount = CheckTopicSubscriptions(_clientSession, topics, "Multi Wildcard");
         // Should match all topics
         Assert.AreEqual(topics.Count, matchCount, "Topics not matched");
     }
 
     [TestMethod]
-    public async Task Match_Hash_Test_Search_NoWildcard()
+    public void Match_Hash_Test_Search_NoWildcard()
     {
-        var topics = await PrepareTopicHashSubscriptions(TopicHashSelector.NoWildcard);
+        var topics = PrepareTopicHashSubscriptions(TopicHashSelector.NoWildcard);
 
         // all match lookup
         var matchCount = CheckTopicSubscriptions(_clientSession, topics, "No Wildcard All Match");
@@ -429,9 +430,9 @@ public sealed class SubscriptionTopicHashTests : IDisposable
     }
 
     [TestMethod]
-    public async Task Match_Hash_Test_Search_SingleWildcard()
+    public void Match_Hash_Test_Search_SingleWildcard()
     {
-        var topics = await PrepareTopicHashSubscriptions(TopicHashSelector.SingleWildcard);
+        var topics = PrepareTopicHashSubscriptions(TopicHashSelector.SingleWildcard);
         var matchCount = CheckTopicSubscriptions(_clientSession, topics, "Single Wildcard");
         // Should match all topics
         Assert.AreEqual(topics.Count, matchCount, "Topics not matched");
@@ -535,7 +536,7 @@ public sealed class SubscriptionTopicHashTests : IDisposable
     }
 
 
-    async Task<List<string>> PrepareTopicHashSubscriptions(TopicHashSelector selector)
+    List<string> PrepareTopicHashSubscriptions(TopicHashSelector selector)
     {
         const int numPublishers = 1;
         const int numTopicsPerPublisher = 10000;
@@ -550,13 +551,15 @@ public sealed class SubscriptionTopicHashTests : IDisposable
         var logger = new TestLogger();
         var serverOptions = new MqttServerOptions();
         var retainedMessagesManager = new MqttRetainedMessagesManager(logger);
-        var sessionManager = new MqttClientSessionsManager(serverOptions, retainedMessagesManager, logger, new MessageRingBuffer(1024 * 1024, 256));
+        var hugeNativeMemoryPool = new HugeNativeMemoryPool(new (uint, int)[] { (65536, 16) });
+        var sessionManager = new MqttClientSessionsManager(serverOptions, retainedMessagesManager, logger, hugeNativeMemoryPool);
         _clientSession = new MqttSession(
             new MqttConnectPacket { ClientId = Seg(clientId) },
             new Dictionary<object, object>(),
             serverOptions,
             retainedMessagesManager,
-            sessionManager);
+            sessionManager,
+            hugeNativeMemoryPool);
 
         List<string> topicsToSubscribe;
 
@@ -582,7 +585,7 @@ public sealed class SubscriptionTopicHashTests : IDisposable
                     new MqttTopicFilter { Topic = Seg(t) }
                 }
             };
-            await _clientSession.Subscribe(subPacket, default);
+            _clientSession.Subscribe(ref subPacket);
         }
 
         return topics;

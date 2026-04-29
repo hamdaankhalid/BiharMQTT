@@ -2,7 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-using System;
+using System.Buffers;
 using System.Runtime.CompilerServices;
 using System.Text;
 using BiharMQTT.Exceptions;
@@ -17,19 +17,18 @@ namespace BiharMQTT.Formatter;
 ///     same as for the original MemoryStream in .net. Also this implementation allows accessing the internal
 ///     buffer for all platforms and .net framework versions (which is not available at the regular MemoryStream).
 /// </summary>
-public sealed class MqttBufferWriter
+public sealed class MqttBufferWriter : IDisposable
 {
-    const int EncodedStringMaxLength = 65535;
-
-    readonly int _maxBufferSize;
+    const int EncodedStringMaxLength = 80;
 
     byte[] _buffer;
     int _position;
+    private bool disposedValue;
 
-    public MqttBufferWriter(int bufferSize, int maxBufferSize)
+
+    public MqttBufferWriter(int bufferSize)
     {
-        _buffer = new byte[bufferSize];
-        _maxBufferSize = maxBufferSize;
+        _buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
     }
 
     public int Length { get; private set; }
@@ -43,20 +42,7 @@ public sealed class MqttBufferWriter
 
     public void Cleanup()
     {
-        // This method frees the used memory by shrinking the buffer. This is required because the buffer
-        // is used across several messages. In general this is not a big issue because subsequent Ping packages
-        // have the same size but a very big publish package with 100 MB of payload will increase the buffer
-        // a lot and the size will never reduced. So this method tries to find a size which can be held in
-        // memory for a long time without causing troubles.
-
-        if (_buffer.Length <= _maxBufferSize)
-        {
-            return;
-        }
-
-        // Create a new and empty buffer. Do not use Array.Resize because it will copy all data from
-        // the old array to the new one which is not required in this case.
-        _buffer = new byte[_maxBufferSize];
+        Array.Clear(_buffer);
     }
 
     public byte[] GetBuffer()
@@ -98,7 +84,6 @@ public sealed class MqttBufferWriter
 
     public void Seek(int position)
     {
-        EnsureCapacity(position);
         _position = position;
     }
 
@@ -304,7 +289,6 @@ public sealed class MqttBufferWriter
         IncreasePosition(size);
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     void EnsureAdditionalCapacity(int additionalCapacity)
     {
         var bufferLength = _buffer.Length;
@@ -315,26 +299,7 @@ public sealed class MqttBufferWriter
             return;
         }
 
-        EnsureCapacity(bufferLength + additionalCapacity - freeSpace);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    void EnsureCapacity(int capacity)
-    {
-        var newBufferLength = _buffer.Length;
-
-        if (newBufferLength >= capacity)
-        {
-            return;
-        }
-
-        while (newBufferLength < capacity)
-        {
-            newBufferLength *= 2;
-        }
-
-        // Array.Resize will create a new array and copy the existing data to the new one.
-        Array.Resize(ref _buffer, newBufferLength);
+        throw new InvalidDataException("Ran out of buffer writer capacity. Fix the capacity manually on the MqttBufferWriter");
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -349,4 +314,35 @@ public sealed class MqttBufferWriter
             Length = _position;
         }
     }
+
+    private void Dispose(bool disposing)
+    {
+        if (!disposedValue)
+        {
+            if (disposing)
+            {
+                // TODO: dispose managed state (managed objects)
+                ArrayPool<byte>.Shared.Return(_buffer);
+            }
+
+            // TODO: free unmanaged resources (unmanaged objects) and override finalizer
+            // TODO: set large fields to null
+            disposedValue = true;
+        }
+    }
+
+    // // TODO: override finalizer only if 'Dispose(bool disposing)' has code to free unmanaged resources
+    // ~MqttBufferWriter()
+    // {
+    //     // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
+    //     Dispose(disposing: false);
+    // }
+
+    public void Dispose()
+    {
+        // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
+        Dispose(disposing: true);
+        GC.SuppressFinalize(this);
+    }
+
 }

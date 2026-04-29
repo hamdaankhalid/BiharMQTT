@@ -28,7 +28,6 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
     readonly MqttNetSourceLogger _logger;
     readonly MqttServerOptions _options;
     readonly MqttRetainedMessagesManager _retainedMessagesManager;
-    readonly MessageRingBuffer _ringBuffer;
     readonly IMqttNetLogger _rootLogger;
     readonly ReaderWriterLockSlim _sessionsManagementLock = new();
 
@@ -37,21 +36,32 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
     readonly MqttSessionsStorage _sessionsStorage = new();
     readonly HashSet<MqttSession> _subscriberSessions = [];
 
+    // Copy-on-write snapshot rebuilt on subscribe/unsubscribe (under write lock).
+    // Publish dispatch reads this via a single volatile read — zero allocation.
+    volatile MqttSession[] _subscriberSessionsSnapshot = [];
+
+    readonly HugeNativeMemoryPool _hugeNativeMemoryPool;
+    readonly MqttSenderPool _senderPool;
+
 
     public MqttClientSessionsManager(
         MqttServerOptions options,
         MqttRetainedMessagesManager retainedMessagesManager,
         IMqttNetLogger logger,
-        MessageRingBuffer ringBuffer)
+        HugeNativeMemoryPool hugeNativeMemoryPool,
+        MqttSenderPool senderPool)
     {
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(hugeNativeMemoryPool);
+        ArgumentNullException.ThrowIfNull(senderPool);
 
         _logger = logger.WithSource(nameof(MqttClientSessionsManager));
         _rootLogger = logger;
 
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _retainedMessagesManager = retainedMessagesManager ?? throw new ArgumentNullException(nameof(retainedMessagesManager));
-        _ringBuffer = ringBuffer ?? throw new ArgumentNullException(nameof(ringBuffer));
+        _hugeNativeMemoryPool = hugeNativeMemoryPool;
+        _senderPool = senderPool;
     }
 
     public async Task CloseAllConnections(MqttServerClientDisconnectOptions options)
@@ -88,6 +98,7 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
             if (_sessionsStorage.TryRemoveSession(clientId, out session))
             {
                 _subscriberSessions.Remove(session);
+                _subscriberSessionsSnapshot = [.. _subscriberSessions];
             }
         }
         finally
@@ -112,86 +123,168 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
         _logger.Verbose("Session of client '{0}' deleted", clientId);
     }
 
-    static ArraySegment<byte> ToSegment(string s) => s == null ? default : new ArraySegment<byte>(Encoding.UTF8.GetBytes(s));
-
-    public Task<DispatchApplicationMessageResult> DispatchPublishPacketDirect(
+    public unsafe DispatchApplicationMessageResult DispatchPublishPacketDirect(
         string senderId,
-        MqttPublishPacket publishPacket,
-        CancellationToken cancellationToken)
+        MqttPublishPacket publishPacket)
     {
-        return DispatchViaRingBuffer(
+        var interceptor = _options.PublishInterceptor;
+        if (interceptor != null)
+        {
+            // Snapshot the args on the stack — ref struct, no allocation.
+            var args = new MqttPublishInterceptArgs
+            {
+                SenderClientId = senderId,
+                Topic = publishPacket.Topic.AsSpan(),
+                Payload = publishPacket.Payload,
+                QualityOfServiceLevel = publishPacket.QualityOfServiceLevel,
+                Retain = publishPacket.Retain,
+            };
+
+            switch (interceptor(in args))
+            {
+                case PublishInterceptResult.Consume:
+                    return new DispatchApplicationMessageResult(
+                        (int)MqttPubAckReasonCode.Success, closeConnection: false, reasonString: null, userProperties: null);
+                case PublishInterceptResult.Reject:
+                    return new DispatchApplicationMessageResult(
+                        (int)MqttPubAckReasonCode.NotAuthorized, closeConnection: false, reasonString: null, userProperties: null);
+                case PublishInterceptResult.Allow:
+                default:
+                    break;
+            }
+        }
+
+        return Dispatch(
             senderId,
-            SegmentToString(publishPacket.Topic),
+            publishPacket.Topic,
             publishPacket.Payload,
             publishPacket.QualityOfServiceLevel,
             publishPacket.Retain,
-            SegmentToString(publishPacket.ContentType),
-            SegmentToString(publishPacket.ResponseTopic),
-            publishPacket.CorrelationData.Count == 0 ? null : publishPacket.CorrelationData.ToArray(),
+            publishPacket.ContentType,
+            publishPacket.ResponseTopic,
+            publishPacket.CorrelationData,
             publishPacket.MessageExpiryInterval,
             publishPacket.PayloadFormatIndicator,
             publishPacket.TopicAlias,
             publishPacket.SubscriptionIdentifiers,
-            publishPacket.UserProperties,
-            cancellationToken);
+            publishPacket.UserProperties);
     }
 
-    public Task<DispatchApplicationMessageResult> DispatchApplicationMessage(
+    // Per-thread topic scratch for the server-publish path. The dispatch chain
+    // requires an ArraySegment<byte> for the topic, which the encoder copies
+    // bytes out of synchronously. We grow this once per thread (typical MQTT
+    // topic stays well under 256 bytes), reuse forever.
+    [ThreadStatic] static byte[] t_topicScratch;
+
+    /// <summary>
+    /// Server-side publish entry point. Materializes the borrowed topic span
+    /// into a thread-static byte[] for one synchronous trip through
+    /// <see cref="Dispatch"/>; payload flows by reference. Both
+    /// buffers are reusable as soon as this method returns.
+    /// </summary>
+    internal unsafe void DispatchSpan(
+        string senderId,
+        ReadOnlySpan<byte> topic,
+        ReadOnlySequence<byte> payload,
+        MqttQualityOfServiceLevel qos,
+        bool retain)
+    {
+        var interceptor = _options.PublishInterceptor;
+        if (interceptor != null)
+        {
+            var args = new MqttPublishInterceptArgs
+            {
+                SenderClientId = senderId,
+                Topic = topic,
+                Payload = payload,
+                QualityOfServiceLevel = qos,
+                Retain = retain,
+            };
+
+            // Server-published messages also go through the interceptor. Consume
+            // and Reject both short-circuit — there's no client-side ack to
+            // produce here, so the result code is dropped.
+            if (interceptor(in args) != PublishInterceptResult.Allow)
+            {
+                return;
+            }
+        }
+
+        var scratch = t_topicScratch;
+        if (scratch == null || scratch.Length < topic.Length)
+        {
+            scratch = t_topicScratch = new byte[Math.Max(256, topic.Length)];
+        }
+        topic.CopyTo(scratch);
+        var topicSegment = new ArraySegment<byte>(scratch, 0, topic.Length);
+
+        _ = Dispatch(
+            senderId,
+            topicSegment,
+            payload,
+            qos,
+            retain,
+            contentType: default,
+            responseTopic: default,
+            correlationData: default,
+            messageExpiryInterval: 0,
+            payloadFormatIndicator: default,
+            topicAlias: 0,
+            subscriptionIdentifiers: null,
+            userProperties: null);
+        // After Dispatch returns every matching session has
+        // already encoded + copied the topic bytes (MqttBufferWriter.WriteString
+        // does a memcpy into the encoder's owned buffer), so the scratch
+        // buffer is safe to reuse on the next call from this thread.
+    }
+
+    static ArraySegment<byte> ToSegment(string s) => string.IsNullOrEmpty(s) ? default : new ArraySegment<byte>(Encoding.UTF8.GetBytes(s));
+
+    /// <summary>User inject application message from in-process in server</summary>
+    public DispatchApplicationMessageResult DispatchApplicationMessage(
         string senderId,
         string senderUserName,
         IDictionary senderSessionItems,
-        MqttApplicationMessage applicationMessage,
-        CancellationToken cancellationToken)
+        MqttApplicationMessage applicationMessage)
     {
-        return DispatchViaRingBuffer(
+        return Dispatch(
             senderId,
-            applicationMessage.Topic,
+            ToSegment(applicationMessage.Topic),
             applicationMessage.Payload,
             applicationMessage.QualityOfServiceLevel,
             applicationMessage.Retain,
-            applicationMessage.ContentType,
-            applicationMessage.ResponseTopic,
-            applicationMessage.CorrelationData,
+            ToSegment(applicationMessage.ContentType),
+            ToSegment(applicationMessage.ResponseTopic),
+            applicationMessage.CorrelationData == null ? default : new ArraySegment<byte>(applicationMessage.CorrelationData),
             applicationMessage.MessageExpiryInterval,
             applicationMessage.PayloadFormatIndicator,
             applicationMessage.TopicAlias,
             applicationMessage.SubscriptionIdentifiers,
-            applicationMessage.UserProperties,
-            cancellationToken);
+            applicationMessage.UserProperties);
     }
 
-    /// <summary>
-    ///     Dispatches a buffered application message with reduced heap allocations.
-    ///     When no event interceptors are registered and the message is not retained,
-    ///     this path avoids allocating <see cref="MqttApplicationMessage" /> entirely.
-    ///     If interceptors or retained-message handling is needed, it falls back to
-    ///     materializing an <see cref="MqttApplicationMessage" /> and using the standard path.
-    /// </summary>
-    public Task<DispatchApplicationMessageResult> DispatchApplicationMessage(
+    public DispatchApplicationMessageResult DispatchApplicationMessage(
         string senderId,
         string senderUserName,
         IDictionary senderSessionItems,
-        MqttBufferedApplicationMessage message,
-        CancellationToken cancellationToken)
+        MqttBufferedApplicationMessage message)
     {
-        // ── Ring buffer path ──
-        return DispatchViaRingBuffer(
+        return Dispatch(
             senderId,
-            message.Topic,
+            ToSegment(message.Topic),
             message.Payload.Length > 0
                 ? new ReadOnlySequence<byte>(message.Payload)
                 : ReadOnlySequence<byte>.Empty,
             message.QualityOfServiceLevel,
             message.Retain,
-            message.ContentType,
-            message.ResponseTopic,
-            message.CorrelationData,
+            ToSegment(message.ContentType),
+            ToSegment(message.ResponseTopic),
+            message.CorrelationData == null ? default : new ArraySegment<byte>(message.CorrelationData),
             message.MessageExpiryInterval,
             message.PayloadFormatIndicator,
             0,
             message.SubscriptionIdentifiers,
-            message.UserProperties,
-            cancellationToken);
+            message.UserProperties);
     }
 
     public void Dispose()
@@ -337,7 +430,7 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
                 // Send failure response here without preparing a connection and session!
                 var encoder = channelAdapter.PacketFormatterAdapter.Encoder;
                 var failBuffer = encoder.Encode(ref connAckPacket);
-                await channelAdapter.SendPacketAsync(failBuffer, cancellationToken).ConfigureAwait(false);
+                channelAdapter.SendPacket(failBuffer.Packet.AsMemory(), failBuffer.Payload, cancellationToken);
                 return;
             }
 
@@ -346,7 +439,7 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
 
             MqttV5PacketEncoder connAckEncoder = channelAdapter.PacketFormatterAdapter.Encoder;
             MqttPacketBuffer connAckBuffer = connAckEncoder.Encode(ref connAckPacket);
-            await connectedClient.SendPacketAsync(connAckBuffer, cancellationToken).ConfigureAwait(false);
+            connectedClient.SendPacket(connAckBuffer.Packet, connAckBuffer.Payload, cancellationToken);
 
             await connectedClient.RunAsync().ConfigureAwait(false);
         }
@@ -402,6 +495,8 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
             {
                 clientSession.AddSubscribedTopic(topic);
             }
+
+            _subscriberSessionsSnapshot = [.. _subscriberSessions];
         }
         finally
         {
@@ -424,6 +519,8 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
                 // last subscription removed
                 _subscriberSessions.Remove(clientSession);
             }
+
+            _subscriberSessionsSnapshot = [.. _subscriberSessions];
         }
         finally
         {
@@ -448,8 +545,7 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
 
         var clientSession = GetClientSession(clientId);
 
-        var subscribeResult = await clientSession.Subscribe(fakeSubscribePacket, CancellationToken.None).ConfigureAwait(false);
-
+        var subscribeResult = clientSession.Subscribe(ref fakeSubscribePacket);
         if (subscribeResult.RetainedMessages == null)
         {
             return;
@@ -469,7 +565,8 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
 
         var fakeUnsubscribePacket = new MqttUnsubscribePacket { TopicFilters = new List<ArraySegment<byte>>(topicFilters.Select(t => ToSegment(t))) };
 
-        return GetClientSession(clientId).Unsubscribe(fakeUnsubscribePacket, CancellationToken.None);
+        GetClientSession(clientId).Unsubscribe(fakeUnsubscribePacket, CancellationToken.None);
+        return Task.CompletedTask;
     }
 
     async Task<MqttConnectedClient> CreateClientConnection(
@@ -478,7 +575,8 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
         MqttChannelAdapter channelAdapter)
     {
         MqttConnectedClient connectedClient;
-        var clientId = SegmentToString(connectPacket.ClientId);
+        // Materialize it once and store it
+        string clientId = SegmentToString(connectPacket.ClientId);
 
         using (await _createConnectionSyncRoot.EnterAsync().ConfigureAwait(false))
         {
@@ -500,6 +598,7 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
                     {
                         _logger.Verbose("Deleting existing session of client '{0}' due to clean start", clientId);
                         _subscriberSessions.Remove(oldSession);
+                        _subscriberSessionsSnapshot = [.. _subscriberSessions];
                         session = CreateSession(connectPacket, new ConcurrentDictionary<object, object>());
                     }
                     else
@@ -528,7 +627,7 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
                         oldConnectedClient.IsTakenOver = true;
                     }
 
-                    connectedClient = new MqttConnectedClient(connectPacket, channelAdapter, session, _options, this, _rootLogger);
+                    connectedClient = new MqttConnectedClient(connectPacket, channelAdapter, session, _options, this, _senderPool, _rootLogger);
                     _clients[clientId] = connectedClient;
                 }
             }
@@ -552,80 +651,36 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
     MqttSession CreateSession(MqttConnectPacket connectPacket, IDictionary sessionItems)
     {
         _logger.Verbose("Created new session for client '{0}'", SegmentToString(connectPacket.ClientId));
-        return new MqttSession(connectPacket, sessionItems, _options, _retainedMessagesManager, this);
+        return new MqttSession(connectPacket, sessionItems, _options, _retainedMessagesManager, this, _hugeNativeMemoryPool);
     }
 
-    /// <summary>
-    ///     Ring-buffer-backed dispatch: acquires a slot, memcopies the payload once,
-    ///     and fans out to subscribers using packets that reference ring buffer memory.
-    ///     The slot is ref-counted — each subscriber holds a ref that is released
-    ///     when the packet bus item terminates.
-    /// </summary>
-    async Task<DispatchApplicationMessageResult> DispatchViaRingBuffer(
+    DispatchApplicationMessageResult Dispatch(
         string senderId,
-        string topic,
+        ArraySegment<byte> topicSegment,
         ReadOnlySequence<byte> payload,
         MqttQualityOfServiceLevel qos,
         bool retain,
-        string contentType,
-        string responseTopic,
-        byte[] correlationData,
+        ArraySegment<byte> contentType,
+        ArraySegment<byte> responseTopic,
+        ArraySegment<byte> correlationData,
         uint messageExpiryInterval,
         MqttPayloadFormatIndicator payloadFormatIndicator,
         ushort topicAlias,
         List<uint> subscriptionIdentifiers,
-        List<MqttUserProperty> userProperties,
-        CancellationToken cancellationToken)
+        List<MqttUserProperty> userProperties)
     {
-        // Acquire a ring buffer slot and memcopy the payload in.
-        MessageSlot slot = MessageSlot.Empty;
-        ReadOnlySequence<byte> ringPayload = default;
-
-        var payloadLength = (int)payload.Length;
-        if (payloadLength > 0)
-        {
-            var (acquired, slotMemory) = await _ringBuffer.Acquire(payloadLength, cancellationToken).ConfigureAwait(false);
-            slot = acquired;
-            payload.CopyTo(slotMemory.Span);
-            ringPayload = new ReadOnlySequence<byte>(_ringBuffer.GetPayload(slot));
-        }
-
-        var processPublish = true;
-        var closeConnection = false;
-        string reasonString = null;
-        List<MqttUserProperty> interceptorUserProperties = null;
-        var reasonCode = 0;
-
-        if (!processPublish)
-        {
-            if (slot.IsValid)
-            {
-                _ringBuffer.Release(slot);
-            }
-
-            return new DispatchApplicationMessageResult(reasonCode, closeConnection, reasonString, interceptorUserProperties);
-        }
-
-        var matchingSubscribersCount = 0;
-
+        int matchingSubscribersCount = 0;
         try
         {
-            List<MqttSession> subscriberSessions;
-            _sessionsManagementLock.EnterReadLock();
-            try
-            {
-                subscriberSessions = new List<MqttSession>(_subscriberSessions);
-            }
-            finally
-            {
-                _sessionsManagementLock.ExitReadLock();
-            }
+            MqttSession[] subscriberSessions = _subscriberSessionsSnapshot;
+            Span<byte> topicSpan = topicSegment.AsSpan<byte>();
 
-            MqttTopicHash.Calculate(topic, out var topicHash, out _, out _);
+            // NOTE: Topics always must be ASCII only
+            MqttTopicHash.Calculate(topicSpan, out var topicHash, out _, out _);
 
-            foreach (var session in subscriberSessions)
+            foreach (MqttSession session in subscriberSessions)
             {
-                if (!session.TryCheckSubscriptions(topic, topicHash, qos, senderId, out var checkSubscriptionsResult))
+                if (!session.TryCheckSubscriptions(topicSpan, topicHash, qos, senderId, out CheckSubscriptionsResult checkSubscriptionsResult))
                 {
                     continue;
                 }
@@ -635,16 +690,16 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
                     continue;
                 }
 
-                var publishPacketCopy = new MqttPublishPacket
+                MqttPublishPacket publishPacketCopy = new MqttPublishPacket
                 {
-                    Topic = ToSegment(topic),
-                    Payload = ringPayload,
+                    Topic = topicSegment,
+                    Payload = payload,
                     QualityOfServiceLevel = checkSubscriptionsResult.QualityOfServiceLevel,
                     SubscriptionIdentifiers = checkSubscriptionsResult.SubscriptionIdentifiers,
                     Retain = checkSubscriptionsResult.RetainAsPublished && retain,
-                    ContentType = ToSegment(contentType),
-                    ResponseTopic = ToSegment(responseTopic),
-                    CorrelationData = correlationData == null ? default : new ArraySegment<byte>(correlationData),
+                    ContentType = contentType,
+                    ResponseTopic = responseTopic,
+                    CorrelationData = correlationData,
                     MessageExpiryInterval = messageExpiryInterval,
                     PayloadFormatIndicator = payloadFormatIndicator,
                     TopicAlias = topicAlias,
@@ -658,24 +713,9 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
 
                 matchingSubscribersCount++;
 
-                if (slot.IsValid)
-                {
-                    _ringBuffer.AddRef(slot);
-                    session.EnqueuePublishPacket(
-                        ref publishPacketCopy,
-                        (_ringBuffer, slot),
-                        static (ref MqttPacketBusItem busItem, (MessageRingBuffer, MessageSlot) state) =>
-                        {
-                            busItem.OnTerminated = MessageRingBuffer.ReleaseCallback;
-                            busItem.TerminationState = state;
-                        });
-                }
-                else
-                {
-                    session.EnqueuePublishPacket(ref publishPacketCopy);
-                }
+                session.EnqueuePublishPacket(ref publishPacketCopy);
 
-                _logger.Verbose("Client '{0}': Queued PUBLISH packet with topic '{1}'", session.Id, topic);
+                // _logger.Verbose("Client '{0}': Queued PUBLISH packet with topic '{1}'", session.Id, topicSpan);
             }
 
 
@@ -691,14 +731,6 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
         catch (Exception exception)
         {
             _logger.Error(exception, "Error while processing next queued application message");
-        }
-        finally
-        {
-            // Drop the sentinel reference from Acquire.
-            if (slot.IsValid)
-            {
-                _ringBuffer.Release(slot);
-            }
         }
 
         return new DispatchApplicationMessageResult(

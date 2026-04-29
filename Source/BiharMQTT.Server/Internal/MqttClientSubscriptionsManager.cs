@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using System.Runtime.InteropServices;
 using BiharMQTT.Packets;
 using BiharMQTT.Protocol;
 using static BiharMQTT.Internal.MqttSegmentHelper;
@@ -38,23 +39,27 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
         _subscriptionChangedNotification = subscriptionChangedNotification;
     }
 
-    public CheckSubscriptionsResult CheckSubscriptions(string topic, ulong topicHash, MqttQualityOfServiceLevel qualityOfServiceLevel, string senderId)
+    [ThreadStatic] static List<MqttSubscription> _scratchPossibleSubscriptions;
+    [ThreadStatic] static List<uint> _scratchSubscriptionIdentifiers;
+
+    public CheckSubscriptionsResult CheckSubscriptions(Span<byte> topic, ulong topicHash, MqttQualityOfServiceLevel qualityOfServiceLevel, string senderId)
     {
-        var possibleSubscriptions = new List<MqttSubscription>();
+        var possibleSubscriptions = _scratchPossibleSubscriptions ??= new List<MqttSubscription>();
+        possibleSubscriptions.Clear();
 
         // Check for possible subscriptions. They might have collisions but this is fine.
         _subscriptionsLock.EnterReadLock();
         try
         {
-            if (_noWildcardSubscriptionsByTopicHash.TryGetValue(topicHash, out var noWildcardSubscriptions))
+            if (_noWildcardSubscriptionsByTopicHash.TryGetValue(topicHash, out HashSet<MqttSubscription> noWildcardSubscriptions))
             {
                 possibleSubscriptions.AddRange(noWildcardSubscriptions);
             }
 
-            foreach (var wcs in _wildcardSubscriptionsByTopicHash)
+            foreach (KeyValuePair<ulong, TopicHashMaskSubscriptions> wcs in _wildcardSubscriptionsByTopicHash)
             {
-                var subscriptionHash = wcs.Key;
-                var subscriptionsByHashMask = wcs.Value.SubscriptionsByHashMask;
+                ulong subscriptionHash = wcs.Key;
+                Dictionary<ulong, HashSet<MqttSubscription>> subscriptionsByHashMask = wcs.Value.SubscriptionsByHashMask;
                 foreach (var shm in subscriptionsByHashMask)
                 {
                     var subscriptionHashMask = shm.Key;
@@ -76,14 +81,15 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
         // again to avoid collisions.
         if (possibleSubscriptions.Count == 0)
         {
-            return CheckSubscriptionsResult.NotSubscribed;
+            return default;
         }
 
         var senderIsReceiver = string.Equals(senderId, _session.Id, StringComparison.Ordinal);
         var maxQoSLevel = -1; // Not subscribed.
 
-        HashSet<uint> subscriptionIdentifiers = null;
-        var retainAsPublished = false;
+        var scratchIds = _scratchSubscriptionIdentifiers ??= new List<uint>();
+        scratchIds.Clear();
+        bool retainAsPublished = false;
 
         foreach (var subscription in possibleSubscriptions)
         {
@@ -111,25 +117,25 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
 
             if (subscription.Identifier > 0)
             {
-                if (subscriptionIdentifiers == null)
+                if (!scratchIds.Contains(subscription.Identifier))
                 {
-                    subscriptionIdentifiers = new HashSet<uint>();
+                    scratchIds.Add(subscription.Identifier);
                 }
-
-                subscriptionIdentifiers.Add(subscription.Identifier);
             }
         }
 
         if (maxQoSLevel == -1)
         {
-            return CheckSubscriptionsResult.NotSubscribed;
+            return default;
         }
 
         var result = new CheckSubscriptionsResult
         {
             IsSubscribed = true,
             RetainAsPublished = retainAsPublished,
-            SubscriptionIdentifiers = subscriptionIdentifiers?.ToList() ?? EmptySubscriptionIdentifiers,
+            // Reuse the thread-static list directly — consumed during encode before
+            // the next CheckSubscriptions call on this thread.
+            SubscriptionIdentifiers = scratchIds.Count > 0 ? scratchIds : EmptySubscriptionIdentifiers,
 
             // Start with the same QoS as the publisher.
             QualityOfServiceLevel = qualityOfServiceLevel
@@ -157,10 +163,10 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
         _subscriptionsLock?.Dispose();
     }
 
-    public async Task<SubscribeResult> Subscribe(MqttSubscribePacket subscribePacket, CancellationToken cancellationToken)
+    public SubscribeResult Subscribe(ref MqttSubscribePacket subscribePacket)
     {
 
-        var retainedApplicationMessages = await _retainedMessagesManager.GetMessages().ConfigureAwait(false);
+        var retainedApplicationMessages = _retainedMessagesManager.GetMessages();
         var result = new SubscribeResult(subscribePacket.TopicFilters.Count);
 
         var addedSubscriptions = new List<string>();
@@ -170,7 +176,7 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
         // lower one.
         foreach (var topicFilterItem in subscribePacket.TopicFilters.OrderByDescending(f => f.QualityOfServiceLevel))
         {
-            var interceptorEventArgs = InterceptSubscribe(topicFilterItem, subscribePacket.UserProperties, cancellationToken);
+            var interceptorEventArgs = InterceptSubscribe(topicFilterItem, subscribePacket.UserProperties);
             var topicFilter = interceptorEventArgs.TopicFilter;
             var processSubscription = interceptorEventArgs.ProcessSubscription && interceptorEventArgs.Response.ReasonCode <= MqttSubscribeReasonCode.GrantedQoS2;
 
@@ -190,7 +196,7 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
                 continue;
             }
 
-            var topicString = SegmentToString(topicFilter.Topic);
+            string topicString = SegmentToString(topicFilter.Topic);
             var createSubscriptionResult = CreateSubscription(topicFilter, topicString, subscribePacket.SubscriptionIdentifier, interceptorEventArgs.Response.ReasonCode);
 
             addedSubscriptions.Add(topicString);
@@ -202,13 +208,11 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
         // This call will add the new subscription to the internal storage.
         // So the event _ClientSubscribedTopicEvent_ must be called afterwards.
         _subscriptionChangedNotification?.OnSubscriptionsAdded(_session, addedSubscriptions);
-
         return result;
     }
 
-    public async Task<UnsubscribeResult> Unsubscribe(MqttUnsubscribePacket unsubscribePacket, CancellationToken cancellationToken)
+    public UnsubscribeResult Unsubscribe(MqttUnsubscribePacket unsubscribePacket, CancellationToken cancellationToken)
     {
-
         var result = new UnsubscribeResult();
 
         var removedSubscriptions = new List<string>();
@@ -437,10 +441,9 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
 
     InterceptingSubscriptionEventArgs InterceptSubscribe(
         MqttTopicFilter topicFilter,
-        List<MqttUserProperty> userProperties,
-        CancellationToken cancellationToken)
+        List<MqttUserProperty> userProperties)
     {
-        var eventArgs = new InterceptingSubscriptionEventArgs(_session.Id, _session.UserName, new MqttSessionStatus(_session), topicFilter, userProperties, cancellationToken);
+        var eventArgs = new InterceptingSubscriptionEventArgs(_session.Id, _session.UserName, new MqttSessionStatus(_session), topicFilter, userProperties);
 
         if (topicFilter.QualityOfServiceLevel == MqttQualityOfServiceLevel.AtMostOnce)
         {

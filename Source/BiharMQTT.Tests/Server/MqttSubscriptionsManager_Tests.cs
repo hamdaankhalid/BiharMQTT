@@ -4,6 +4,7 @@
 
 using System.Collections.Concurrent;
 using System.Text;
+using BiharMQTT.Internal;
 using BiharMQTT.Packets;
 using BiharMQTT.Protocol;
 using BiharMQTT.Server;
@@ -33,7 +34,7 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
             TopicFilters = [new MqttTopicFilter { Topic = Seg("A/B/C") }]
         };
 
-        await _subscriptionsManager.Subscribe(sp, CancellationToken.None);
+        _subscriptionsManager.Subscribe(ref sp);
 
         Assert.IsTrue(CheckSubscriptions("A/B/C", MqttQualityOfServiceLevel.AtMostOnce, "").IsSubscribed);
 
@@ -47,7 +48,7 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
     }
 
     [TestMethod]
-    public async Task MqttSubscriptionsManager_SubscribeDifferentQoSSuccess()
+    public void MqttSubscriptionsManager_SubscribeDifferentQoSSuccess()
     {
         var sp = new MqttSubscribePacket
         {
@@ -57,7 +58,7 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
             ]
         };
 
-        await _subscriptionsManager.Subscribe(sp, CancellationToken.None);
+        _subscriptionsManager.Subscribe(ref sp);
 
         var result = CheckSubscriptions("A/B/C", MqttQualityOfServiceLevel.ExactlyOnce, "");
         Assert.IsTrue(result.IsSubscribed);
@@ -65,27 +66,27 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
     }
 
     [TestMethod]
-    public async Task MqttSubscriptionsManager_SubscribeSingleNoSuccess()
+    public void MqttSubscriptionsManager_SubscribeSingleNoSuccess()
     {
         var sp = new MqttSubscribePacket
         {
             TopicFilters = [new MqttTopicFilter { Topic = Seg("A/B/C") }]
         };
 
-        await _subscriptionsManager.Subscribe(sp, CancellationToken.None);
+        _subscriptionsManager.Subscribe(ref sp);
 
         Assert.IsFalse(CheckSubscriptions("A/B/X", MqttQualityOfServiceLevel.AtMostOnce, "").IsSubscribed);
     }
 
     [TestMethod]
-    public async Task MqttSubscriptionsManager_SubscribeSingleSuccess()
+    public void MqttSubscriptionsManager_SubscribeSingleSuccess()
     {
         var sp = new MqttSubscribePacket
         {
             TopicFilters = [new MqttTopicFilter { Topic = Seg("A/B/C") }]
         };
 
-        await _subscriptionsManager.Subscribe(sp, CancellationToken.None);
+        _subscriptionsManager.Subscribe(ref sp);
 
         var result = CheckSubscriptions("A/B/C", MqttQualityOfServiceLevel.AtMostOnce, "");
 
@@ -94,7 +95,7 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
     }
 
     [TestMethod]
-    public async Task MqttSubscriptionsManager_SubscribeTwoTimesSuccess()
+    public void MqttSubscriptionsManager_SubscribeTwoTimesSuccess()
     {
         var sp = new MqttSubscribePacket
         {
@@ -105,7 +106,7 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
             ]
         };
 
-        await _subscriptionsManager.Subscribe(sp, CancellationToken.None);
+        _subscriptionsManager.Subscribe(ref sp);
 
         var result = CheckSubscriptions("A/B/C", MqttQualityOfServiceLevel.ExactlyOnce, "");
 
@@ -114,10 +115,10 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
     }
 
     [TestMethod]
-    public async Task MqttSubscriptionsManager_SubscribeWildcard1()
+    public void MqttSubscriptionsManager_SubscribeWildcard1()
     {
-        await SubscribeToTopic("house/+/room");
-        await SubscribeToTopic("house/+/room/+");
+        SubscribeToTopic("house/+/room");
+        SubscribeToTopic("house/+/room/+");
 
         CheckIsSubscribed("house/1/room");
         CheckIsSubscribed("house/1/room/bed");
@@ -130,10 +131,10 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
     }
 
     [TestMethod]
-    public async Task MqttSubscriptionsManager_SubscribeWildcard2()
+    public void MqttSubscriptionsManager_SubscribeWildcard2()
     {
-        await SubscribeToTopic("house/+/room");
-        await SubscribeToTopic("house/+/room/#");
+        SubscribeToTopic("house/+/room");
+        SubscribeToTopic("house/+/room/#");
 
         CheckIsSubscribed("house/1/room");
         CheckIsSubscribed("house/1/room/bed");
@@ -146,10 +147,10 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
     }
 
     [TestMethod]
-    public async Task MqttSubscriptionsManager_SubscribeWildcard3()
+    public void MqttSubscriptionsManager_SubscribeWildcard3()
     {
-        await SubscribeToTopic("house/1/room");
-        await SubscribeToTopic("house/1/room/+");
+        SubscribeToTopic("house/1/room");
+        SubscribeToTopic("house/1/room/+");
 
         CheckIsSubscribed("house/1/room");
         CheckIsSubscribed("house/1/room/bed");
@@ -160,9 +161,9 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
     }
 
     [TestMethod]
-    public async Task MqttSubscriptionsManager_SubscribeWildcard4()
+    public void MqttSubscriptionsManager_SubscribeWildcard4()
     {
-        await SubscribeToTopic("house/1/+/+");
+        SubscribeToTopic("house/1/+/+");
 
         CheckIsSubscribed("house/1/room/bed");
         CheckIsSubscribed("house/1/room/chair");
@@ -172,9 +173,9 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
     }
 
     [TestMethod]
-    public async Task MqttSubscriptionsManager_SubscribeWildcard5()
+    public void MqttSubscriptionsManager_SubscribeWildcard5()
     {
-        await SubscribeToTopic("house/1/+/#");
+        SubscribeToTopic("house/1/+/#");
 
         CheckIsSubscribed("house/1/room/bed");
         CheckIsSubscribed("house/1/room/chair");
@@ -191,7 +192,8 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
         var logger = new TestLogger();
         var options = new MqttServerOptions();
         var retainedMessagesManager = new MqttRetainedMessagesManager(logger);
-        var clientSessionManager = new MqttClientSessionsManager(options, retainedMessagesManager, logger, new MessageRingBuffer(1024 * 1024, 256));
+        var hugeNativeMemoryPool = new HugeNativeMemoryPool(new (uint, int)[] { (65536, 16) });
+        var clientSessionManager = new MqttClientSessionsManager(options, retainedMessagesManager, logger, hugeNativeMemoryPool);
 
         var session = new MqttSession(
             new MqttConnectPacket
@@ -201,7 +203,8 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
             new ConcurrentDictionary<object, object>(),
             options,
             retainedMessagesManager,
-            clientSessionManager);
+            clientSessionManager,
+            hugeNativeMemoryPool);
 
         _subscriptionsManager = new MqttClientSubscriptionsManager(session, retainedMessagesManager, clientSessionManager);
     }
@@ -225,7 +228,7 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
         return _subscriptionsManager.CheckSubscriptions(topic, topicHash, applicationMessageQoSLevel, senderClientId);
     }
 
-    async Task SubscribeToTopic(string topic)
+    void SubscribeToTopic(string topic)
     {
         var sp = new MqttSubscribePacket
         {
@@ -235,6 +238,6 @@ public sealed class MqttSubscriptionsManager_Tests : BaseTestClass, IDisposable
             ]
         };
 
-        await _subscriptionsManager.Subscribe(sp, CancellationToken.None);
+        _subscriptionsManager.Subscribe(ref sp);
     }
 }

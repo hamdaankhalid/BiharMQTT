@@ -4,7 +4,7 @@
 
 namespace BiharMQTT.Formatter.V5;
 
-public sealed class MqttV5PacketFormatter
+public sealed class MqttV5PacketFormatter : IDisposable
 {
     readonly MqttBufferWriter _bufferWriter;
 
@@ -21,5 +21,10 @@ public sealed class MqttV5PacketFormatter
     public void Cleanup()
     {
         _bufferWriter.Cleanup();
+    }
+
+    public void Dispose()
+    {
+        Encoder.Dispose();
     }
 }

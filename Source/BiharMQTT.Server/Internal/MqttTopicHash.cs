@@ -2,6 +2,9 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using System.Diagnostics;
+using System.Text;
+
 namespace BiharMQTT.Server.Internal;
 
 /*
@@ -163,7 +166,20 @@ namespace BiharMQTT.Server.Internal;
  */
 public static class MqttTopicHash
 {
-    public static void Calculate(string topic, out ulong resultHash, out ulong resultHashMask, out bool resultHasWildcard)
+    // TOPIC must be ASCII only. Char overload converts in-place via stackalloc to avoid string-to-byte[] heap allocations.
+    public static void Calculate(ReadOnlySpan<char> topic, out ulong resultHash, out ulong resultHashMask, out bool resultHasWildcard)
+    {
+        Span<byte> bytes = topic.Length <= 512 ? stackalloc byte[topic.Length] : new byte[topic.Length];
+        for (var i = 0; i < topic.Length; i++)
+        {
+            bytes[i] = (byte)topic[i];
+        }
+
+        Calculate(bytes, out resultHash, out resultHashMask, out resultHasWildcard);
+    }
+
+    // TOPIC must be ASCII only
+    public static void Calculate(ReadOnlySpan<byte> topic, out ulong resultHash, out ulong resultHashMask, out bool resultHasWildcard)
     {
         // calculate topic hash
         ulong hash = 0;
@@ -177,7 +193,9 @@ public static class MqttTopicHash
         var i = 0;
         while (i < topic.Length)
         {
-            var c = topic[i];
+            Debug.Assert(Ascii.IsValid(topic[i]), "MUST BE ASCII DON'T PLAY WITH MY HEART");
+
+            char c = (char)topic[i];
             if (c == MqttTopicFilterComparer.LevelSeparator)
             {
                 // done with this level

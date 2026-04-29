@@ -6,7 +6,7 @@ using BiharMQTT.Packets;
 
 namespace BiharMQTT.Server.Internal;
 
-public sealed class DispatchApplicationMessageResult
+public readonly struct DispatchApplicationMessageResult
 {
     public DispatchApplicationMessageResult(int reasonCode, bool closeConnection, string reasonString, List<MqttUserProperty> userProperties)
     {

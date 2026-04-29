@@ -24,6 +24,7 @@ public sealed class MqttBufferReader
 
     public int Position => _position - _offset;
 
+    // ONLY used in tests
     public byte[] ReadBinaryData()
     {
         var length = ReadTwoByteInteger();
@@ -58,6 +59,7 @@ public sealed class MqttBufferReader
         return value;
     }
 
+    // Used in test only
     public byte[] ReadRemainingData()
     {
         var bufferLength = BytesLeft;
@@ -235,11 +237,6 @@ public sealed class MqttBufferReader
     public void Seek(int position)
     {
         _position = _offset + position;
-    }
-
-    public void SetBuffer(ArraySegment<byte> buffer)
-    {
-        SetBuffer(buffer.Array, buffer.Offset, buffer.Count);
     }
 
     public void SetBuffer(byte[] buffer, int offset, int length)

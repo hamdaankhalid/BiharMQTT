@@ -22,7 +22,6 @@ public readonly struct MqttBufferedApplicationMessage
     ///     The message payload backed by a <see cref="ReadOnlyMemory{T}" />.
     ///     Callers may supply memory from <see cref="System.Buffers.ArrayPool{T}" />
     ///     or any other buffer source and reclaim it once
-    ///     <see cref="MqttServer.InjectApplicationMessage(MqttBufferedApplicationMessage, string, string, System.Collections.IDictionary, CancellationToken)" />
     ///     completes.
     /// </summary>
     public ReadOnlyMemory<byte> Payload { get; init; }
@@ -65,29 +64,4 @@ public readonly struct MqttBufferedApplicationMessage
     ///     MQTT 5 subscription identifiers.
     /// </summary>
     public List<uint> SubscriptionIdentifiers { get; init; }
-
-    /// <summary>
-    ///     Materializes a heap-allocated <see cref="MqttApplicationMessage" /> from this struct.
-    ///     Used internally when event handlers require a class-based message instance.
-    ///     The payload bytes are copied so the caller can safely reclaim pooled buffers.
-    /// </summary>
-    public MqttApplicationMessage ToApplicationMessage()
-    {
-        return new MqttApplicationMessage
-        {
-            Topic = Topic,
-            Payload = Payload.Length > 0
-                ? new ReadOnlySequence<byte>(Payload.ToArray())
-                : ReadOnlySequence<byte>.Empty,
-            QualityOfServiceLevel = QualityOfServiceLevel,
-            Retain = Retain,
-            ContentType = ContentType,
-            ResponseTopic = ResponseTopic,
-            CorrelationData = CorrelationData,
-            MessageExpiryInterval = MessageExpiryInterval,
-            PayloadFormatIndicator = PayloadFormatIndicator,
-            UserProperties = UserProperties,
-            SubscriptionIdentifiers = SubscriptionIdentifiers
-        };
-    }
 }

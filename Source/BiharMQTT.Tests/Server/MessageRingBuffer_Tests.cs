@@ -206,7 +206,7 @@ public sealed class MessageRingBuffer_Tests
     [TestMethod]
     public async Task ReleaseCallback_Works_With_PacketBusItem()
     {
-        using var rb = new MessageRingBuffer(1024, 16);
+        var rb = new MessageRingBuffer(1024, 16);
 
         var (slot, memory) = await rb.Acquire(32);
         "test payload"u8.CopyTo(memory.Span);
@@ -216,9 +216,10 @@ public sealed class MessageRingBuffer_Tests
         rb.Release(slot); // sentinel release
 
         // Simulate what MqttPacketBusItem.OnTerminated does
-        MessageRingBuffer.ReleaseCallback((rb, slot));
+        MessageRingBuffer.ReleaseCallback(ref rb, ref slot);
 
         Assert.AreEqual(1L, rb.TotalReleased);
+        rb.Dispose();
     }
 
     [TestMethod]

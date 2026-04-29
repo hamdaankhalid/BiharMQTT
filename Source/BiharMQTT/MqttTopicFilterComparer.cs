@@ -11,14 +11,26 @@ public static class MqttTopicFilterComparer
     public const char SingleLevelWildcard = '+';
     public const char ReservedTopicPrefix = '$';
 
-    public static unsafe MqttTopicFilterCompareResult Compare(string topic, string filter)
+    // Char-topic overload: converts char span to byte span in stackalloc and delegates. Topics must be ASCII.
+    public static MqttTopicFilterCompareResult Compare(ReadOnlySpan<char> topic, ReadOnlySpan<char> filter)
     {
-        if (string.IsNullOrEmpty(topic))
+        Span<byte> bytes = topic.Length <= 512 ? stackalloc byte[topic.Length] : new byte[topic.Length];
+        for (var i = 0; i < topic.Length; i++)
+        {
+            bytes[i] = (byte)topic[i];
+        }
+
+        return Compare(bytes, filter);
+    }
+
+    public static unsafe MqttTopicFilterCompareResult Compare(ReadOnlySpan<byte> topic, ReadOnlySpan<char> filter)
+    {
+        if (topic.Length == 0)
         {
             return MqttTopicFilterCompareResult.TopicInvalid;
         }
 
-        if (string.IsNullOrEmpty(filter))
+        if (filter.Length == 0)
         {
             return MqttTopicFilterCompareResult.FilterInvalid;
         }
@@ -29,7 +41,7 @@ public static class MqttTopicFilterComparer
         var topicOffset = 0;
         var topicLength = topic.Length;
 
-        fixed (char* topicPointer = topic)
+        fixed (byte* topicPointer = topic)
         fixed (char* filterPointer = filter)
         {
             if (filterLength > topicLength)

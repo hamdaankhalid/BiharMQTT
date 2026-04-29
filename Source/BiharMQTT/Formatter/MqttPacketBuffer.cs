@@ -7,13 +7,12 @@ using System.Buffers;
 
 namespace BiharMQTT.Formatter;
 
-public readonly struct MqttPacketBuffer
+public readonly struct MqttPacketBuffer : ICopyable<MqttPacketBuffer>
 {
     public MqttPacketBuffer(ArraySegment<byte> packet, ReadOnlySequence<byte> payload)
     {
         Packet = packet;
         Payload = payload;
-
         Length = Packet.Count + (int)Payload.Length;
     }
 
@@ -21,7 +20,6 @@ public readonly struct MqttPacketBuffer
     {
         Packet = packet;
         Payload = EmptyBuffer.ReadOnlySequence;
-
         Length = Packet.Count;
     }
 
@@ -30,6 +28,26 @@ public readonly struct MqttPacketBuffer
     public ArraySegment<byte> Packet { get; }
 
     public ReadOnlySequence<byte> Payload { get; }
+
+    public void CopyHeaderTo(Span<byte> destination)
+    {
+        if (destination.Length < Packet.Count) throw new ArgumentException("Destination span is too small for header", nameof(destination));
+        Packet.AsSpan().CopyTo(destination);
+    }
+
+    public void CopyPayloadTo(Span<byte> destination)
+    {
+        if (Payload.Length == 0) return;
+        if (destination.Length < (int)Payload.Length) throw new ArgumentException("Destination span is too small for payload", nameof(destination));
+        Payload.CopyTo(destination);
+    }
+
+    public void CopyTo(Span<byte> destination)
+    {
+        if (destination.Length < Length) throw new ArgumentException("Destination span is too small for packet", nameof(destination));
+        CopyHeaderTo(destination);
+        CopyPayloadTo(destination.Slice(Packet.Count));
+    }
 
     public byte[] ToArray()
     {
@@ -54,4 +72,12 @@ public readonly struct MqttPacketBuffer
 
         return new ArraySegment<byte>(ToArray());
     }
+}
+
+public interface ICopyable<T> where T : ICopyable<T>
+{
+    int Length { get; }
+    void CopyTo(Span<byte> destination);
+    void CopyHeaderTo(Span<byte> destination);
+    void CopyPayloadTo(Span<byte> destination);
 }

@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using System.Buffers;
 using System.Collections;
 using System.Collections.Concurrent;
 using BiharMQTT.Adapter;
@@ -22,8 +23,11 @@ public class MqttServer : Disposable
     readonly MqttNetSourceLogger _logger;
     readonly MqttServerOptions _options;
     readonly MqttRetainedMessagesManager _retainedMessagesManager;
-    readonly MessageRingBuffer _ringBuffer;
+    readonly HugeNativeMemoryPool _nativeMemoryPool;
+    readonly MqttSenderPool _senderPool;
     readonly IMqttNetLogger _rootLogger;
+
+    // HK TODO: give user ability to add an intercept here
 
     CancellationTokenSource _cancellationTokenSource;
     bool _isStopping;
@@ -39,11 +43,15 @@ public class MqttServer : Disposable
         _rootLogger = logger ?? throw new ArgumentNullException(nameof(logger));
         _logger = logger.WithSource(nameof(MqttServer));
 
-        // Ring buffer is shared between all client sessions. HK TODO: maybe I can use allocator per client instead here to reduce contention
-        _ringBuffer = new MessageRingBuffer(options.RingBufferCapacityBytes, options.RingBufferMaxSlots);
+        _nativeMemoryPool = new HugeNativeMemoryPool(
+            new (uint bucketSize, int minNumBuckets)[]
+            {
+                (Constants.PreAllocatedQMemoryKb * 1024, Constants.MaxConcurrentConnections * 3) // Preallocated is 3 per Mqttpacketbus, and 1 per connected client
+            });
 
         _retainedMessagesManager = new MqttRetainedMessagesManager(_rootLogger);
-        _clientSessionsManager = new MqttClientSessionsManager(options, _retainedMessagesManager, _rootLogger, _ringBuffer);
+        _senderPool = new MqttSenderPool(options.SenderThreadCount, _rootLogger);
+        _clientSessionsManager = new MqttClientSessionsManager(options, _retainedMessagesManager, _rootLogger, _nativeMemoryPool, _senderPool);
         _keepAliveMonitor = new MqttServerKeepAliveMonitor(options, _clientSessionsManager, _rootLogger);
     }
 
@@ -55,19 +63,6 @@ public class MqttServer : Disposable
     public bool AcceptNewConnections { get; set; } = true;
 
     public bool IsStarted => _cancellationTokenSource != null;
-
-    /// <summary>
-    ///     Gets ring buffer diagnostic counters.
-    /// </summary>
-    public MessageRingBufferDiagnostics GetRingBufferDiagnostics()
-    {
-        return new MessageRingBufferDiagnostics
-        {
-            CapacityBytes = _ringBuffer.Capacity,
-            TotalAcquired = _ringBuffer.TotalAcquired,
-            TotalReleased = _ringBuffer.TotalReleased
-        };
-    }
 
     /// <summary>
     ///     Gives access to the session items which belong to this server. This session items are passed
@@ -128,12 +123,41 @@ public class MqttServer : Disposable
     ///     <see cref="MqttApplicationMessage" /> and allows the caller to supply a pooled
     ///     <see cref="ReadOnlyMemory{T}" /> payload that can be reclaimed once this method completes.
     /// </summary>
+    /// <summary>
+    /// Server-side publish entry point. Zero allocations on the call site:
+    /// <paramref name="topic"/> and <paramref name="payload"/> are <strong>borrowed</strong>
+    /// for the duration of this call only — the dispatch chain copies bytes into
+    /// per-subscriber encoder buffers and the per-session bus before returning.
+    /// <para>
+    /// Goes through the same <see cref="MqttServerOptions.PublishInterceptor"/> as
+    /// inbound PUBLISHes; if the interceptor returns <see cref="PublishInterceptResult.Consume"/>
+    /// or <see cref="PublishInterceptResult.Reject"/>, fan-out is skipped silently.
+    /// </para>
+    /// <para>
+    /// Do not call this method re-entrantly from inside the interceptor.
+    /// </para>
+    /// </summary>
+    public unsafe void Publish(
+        ReadOnlySpan<byte> topic,
+        ReadOnlySequence<byte> payload,
+        MqttQualityOfServiceLevel qualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce,
+        bool retain = false)
+    {
+        ThrowIfNotStarted();
+
+        _clientSessionsManager.DispatchSpan(
+            senderId: string.Empty,
+            topic,
+            payload,
+            qualityOfServiceLevel,
+            retain);
+    }
+
     public Task InjectApplicationMessage(
         MqttBufferedApplicationMessage message,
         string senderClientId = "",
         string senderUserName = null,
-        IDictionary customSessionItems = null,
-        CancellationToken cancellationToken = default)
+        IDictionary customSessionItems = null)
     {
         if (string.IsNullOrEmpty(message.Topic))
         {
@@ -146,12 +170,13 @@ public class MqttServer : Disposable
 
         var sessionItems = customSessionItems ?? ServerSessionItems;
 
-        return _clientSessionsManager.DispatchApplicationMessage(
+        _clientSessionsManager.DispatchApplicationMessage(
             senderClientId ?? string.Empty,
             senderUserName,
             sessionItems,
-            message,
-            cancellationToken);
+            message);
+
+        return Task.CompletedTask;
     }
 
     public async Task StartAsync()
@@ -244,7 +269,8 @@ public class MqttServer : Disposable
         {
             StopAsync(new MqttServerStopOptions()).GetAwaiter().GetResult();
             _adapter.Dispose();
-            _ringBuffer?.Dispose();
+            _senderPool.Dispose();
+            _nativeMemoryPool.Dispose();
         }
 
         base.Dispose(disposing);

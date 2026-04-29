@@ -4,17 +4,21 @@
 using BiharMQTT.Diagnostics.Logger;
 using BiharMQTT.Server;
 
+// Static interceptor: an Allow no-op exercises the function-pointer call site
+// without changing behaviour. Swap in topic-prefix checks here for $SYS-style
+// publisher-to-server-only routes or auth-gated publishes.
+static PublishInterceptResult AllowAllInterceptor(in MqttPublishInterceptArgs args)
+    => PublishInterceptResult.Allow;
+
 var logger = new MqttNetEventLogger();
-logger.LogMessagePublished += (_, e) =>
-{
-    Console.WriteLine($"[{e.LogMessage.Level}] {e.LogMessage.Source}: {e.LogMessage.Message}");
-};
 
 var mqttServerFactory = new MqttServerFactory();
 var mqttServerOptions = new MqttServerOptionsBuilder()
     .WithDefaultEndpoint()       // plain TCP on port 1883
     .WithDefaultEndpointPort(1883)
     .Build();
+
+unsafe { mqttServerOptions.PublishInterceptor = &AllowAllInterceptor; }
 
 using var mqttServer = mqttServerFactory.CreateMqttServer(mqttServerOptions, logger);
 await mqttServer.StartAsync();

@@ -9,5 +9,5 @@ namespace BiharMQTT.Internal;
 public static class MqttSegmentHelper
 {
     public static string SegmentToString(ArraySegment<byte> segment) =>
-        segment.Count == 0 ? string.Empty : Encoding.UTF8.GetString(segment.Array!, segment.Offset, segment.Count);
+        segment.Count == 0 ? string.Empty : Encoding.UTF8.GetString(segment);
 }

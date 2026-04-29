@@ -46,12 +46,11 @@ public sealed class MqttRetainedMessagesManager : IDisposable
         return Task.FromResult<MqttApplicationMessage>(null);
     }
 
-    public Task<IList<MqttApplicationMessage>> GetMessages()
+    public IList<MqttApplicationMessage> GetMessages()
     {
         lock (_messages)
         {
-            var result = new List<MqttApplicationMessage>(_messages.Values);
-            return Task.FromResult((IList<MqttApplicationMessage>)result);
+            return _messages.Values.ToList();
         }
     }
 

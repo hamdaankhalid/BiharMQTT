@@ -20,15 +20,13 @@ public sealed class InterceptingSubscriptionEventArgs
         string userName,
         MqttSessionStatus sessionStatus,
         MqttTopicFilter topicFilter,
-        List<MqttUserProperty> userProperties,
-        CancellationToken cancellationToken)
+        List<MqttUserProperty> userProperties)
     {
         ClientId = clientId;
         UserName = userName;
         SessionStatus = sessionStatus;
         TopicFilter = topicFilter;
         UserProperties = userProperties;
-        CancellationToken = cancellationToken;
     }
 
     public string ClientId { get; }
@@ -40,8 +38,6 @@ public sealed class InterceptingSubscriptionEventArgs
     public MqttTopicFilter TopicFilter { get; set; }
 
     public List<MqttUserProperty> UserProperties { get; set; }
-
-    public CancellationToken CancellationToken { get; }
 
     public bool CloseConnection { get; set; }
 
