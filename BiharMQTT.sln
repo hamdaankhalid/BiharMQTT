@@ -1,4 +1,4 @@
-﻿	
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31919.166
@@ -18,8 +18,6 @@ EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BiharMQTT.Samples", "Samples\BiharMQTT.Samples.csproj", "{71CF35F5-3327-4A91-AAF4-5340F6701771}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BiharMQTT.Tests", "Source\BiharMQTT.Tests\BiharMQTT.Tests.csproj", "{B270F32A-9F3E-42EE-A989-813E35E29ADB}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BiharMQTT.Benchmarks", "Source\BiharMQTT.Benchmarks\BiharMQTT.Benchmarks.csproj", "{2F516E76-AAC4-4219-B7D1-34CDD3CFF381}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BiharMQTT.Server", "Source\BiharMQTT.Server\BiharMQTT.Server.csproj", "{C876EFFD-C5AD-4E26-BD9F-4C48252C02BC}"
 EndProject
@@ -73,18 +71,6 @@ Global
 		{B270F32A-9F3E-42EE-A989-813E35E29ADB}.Release|x64.Build.0 = Release|Any CPU
 		{B270F32A-9F3E-42EE-A989-813E35E29ADB}.Release|x86.ActiveCfg = Release|Any CPU
 		{B270F32A-9F3E-42EE-A989-813E35E29ADB}.Release|x86.Build.0 = Release|Any CPU
-		{2F516E76-AAC4-4219-B7D1-34CDD3CFF381}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{2F516E76-AAC4-4219-B7D1-34CDD3CFF381}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{2F516E76-AAC4-4219-B7D1-34CDD3CFF381}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{2F516E76-AAC4-4219-B7D1-34CDD3CFF381}.Debug|x64.Build.0 = Debug|Any CPU
-		{2F516E76-AAC4-4219-B7D1-34CDD3CFF381}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{2F516E76-AAC4-4219-B7D1-34CDD3CFF381}.Debug|x86.Build.0 = Debug|Any CPU
-		{2F516E76-AAC4-4219-B7D1-34CDD3CFF381}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{2F516E76-AAC4-4219-B7D1-34CDD3CFF381}.Release|Any CPU.Build.0 = Release|Any CPU
-		{2F516E76-AAC4-4219-B7D1-34CDD3CFF381}.Release|x64.ActiveCfg = Release|Any CPU
-		{2F516E76-AAC4-4219-B7D1-34CDD3CFF381}.Release|x64.Build.0 = Release|Any CPU
-		{2F516E76-AAC4-4219-B7D1-34CDD3CFF381}.Release|x86.ActiveCfg = Release|Any CPU
-		{2F516E76-AAC4-4219-B7D1-34CDD3CFF381}.Release|x86.Build.0 = Release|Any CPU
 		{C876EFFD-C5AD-4E26-BD9F-4C48252C02BC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{C876EFFD-C5AD-4E26-BD9F-4C48252C02BC}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C876EFFD-C5AD-4E26-BD9F-4C48252C02BC}.Debug|x64.ActiveCfg = Debug|Any CPU
