@@ -5,6 +5,7 @@
 using System.Net;
 using System.Security.Cryptography.X509Certificates;
 using BiharMQTT.Formatter;
+using BiharMQTT.Packets;
 
 namespace BiharMQTT.Server;
 
@@ -54,4 +55,13 @@ public readonly ref struct MqttConnectionValidatorArgs
 
     /// <summary>True when the client requested a clean session (no resumed state).</summary>
     public bool CleanSession { get; init; }
+
+    /// <summary>
+    /// MQTT v5 CONNECT user properties. <c>null</c> when the client sent none
+    /// or when the connection is MQTT v3.1.1. The list and its
+    /// <see cref="MqttUserProperty.Name"/>/<see cref="MqttUserProperty.Value"/>
+    /// segments are borrowed from the inbound packet — copy if you need to
+    /// retain them past the validator return.
+    /// </summary>
+    public IReadOnlyList<MqttUserProperty> UserProperties { get; init; }
 }

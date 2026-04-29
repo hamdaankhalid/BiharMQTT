@@ -880,6 +880,7 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
             RemoteEndPoint = channelAdapter.RemoteEndPoint,
             ClientCertificate = channelAdapter.ClientCertificate,
             CleanSession = connectPacket.CleanSession,
+            UserProperties = connectPacket.UserProperties,
         };
         return validator(in args);
     }
