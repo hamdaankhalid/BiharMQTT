@@ -240,53 +240,6 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
 
     static ArraySegment<byte> ToSegment(string s) => string.IsNullOrEmpty(s) ? default : new ArraySegment<byte>(Encoding.UTF8.GetBytes(s));
 
-    /// <summary>User inject application message from in-process in server</summary>
-    public DispatchApplicationMessageResult DispatchApplicationMessage(
-        string senderId,
-        string senderUserName,
-        IDictionary senderSessionItems,
-        MqttApplicationMessage applicationMessage)
-    {
-        return Dispatch(
-            senderId,
-            ToSegment(applicationMessage.Topic),
-            applicationMessage.Payload,
-            applicationMessage.QualityOfServiceLevel,
-            applicationMessage.Retain,
-            ToSegment(applicationMessage.ContentType),
-            ToSegment(applicationMessage.ResponseTopic),
-            applicationMessage.CorrelationData == null ? default : new ArraySegment<byte>(applicationMessage.CorrelationData),
-            applicationMessage.MessageExpiryInterval,
-            applicationMessage.PayloadFormatIndicator,
-            applicationMessage.TopicAlias,
-            applicationMessage.SubscriptionIdentifiers,
-            applicationMessage.UserProperties);
-    }
-
-    public DispatchApplicationMessageResult DispatchApplicationMessage(
-        string senderId,
-        string senderUserName,
-        IDictionary senderSessionItems,
-        MqttBufferedApplicationMessage message)
-    {
-        return Dispatch(
-            senderId,
-            ToSegment(message.Topic),
-            message.Payload.Length > 0
-                ? new ReadOnlySequence<byte>(message.Payload)
-                : ReadOnlySequence<byte>.Empty,
-            message.QualityOfServiceLevel,
-            message.Retain,
-            ToSegment(message.ContentType),
-            ToSegment(message.ResponseTopic),
-            message.CorrelationData == null ? default : new ArraySegment<byte>(message.CorrelationData),
-            message.MessageExpiryInterval,
-            message.PayloadFormatIndicator,
-            0,
-            message.SubscriptionIdentifiers,
-            message.UserProperties);
-    }
-
     public void Dispose()
     {
         _createConnectionSyncRoot.Dispose();
