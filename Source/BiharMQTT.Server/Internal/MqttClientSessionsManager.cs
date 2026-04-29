@@ -402,6 +402,15 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
             bool clientIdWasEmpty = connectPacket.ClientId.Count == 0;
             MqttConnectReasonCode reason = ValidateConnection(ref connectPacket, channelAdapter);
 
+            // User-supplied validator runs only after the broker's own checks
+            // pass — re-using the function-pointer pattern from PublishInterceptor.
+            // Lets a host re-add Firebase-token / username-password gating on the
+            // plain-TCP (1883) path while leaving mTLS-trusted (8883) clients alone.
+            if (reason == MqttConnectReasonCode.Success)
+            {
+                reason = InvokeConnectionValidator(_options, ref connectPacket, channelAdapter);
+            }
+
             var connAckPacket = new MqttConnAckPacket
             {
                 ReasonCode = reason,
@@ -441,6 +450,11 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
             MqttPacketBuffer connAckBuffer = connAckEncoder.Encode(ref connAckPacket);
             connectedClient.SendPacket(connAckBuffer.Packet, connAckBuffer.Payload, cancellationToken);
 
+            // Fire after CONNACK is on the wire and the session is installed,
+            // before the receive loop arms — so the host's connect-side bookkeeping
+            // sees a fully-installed client.
+            InvokeClientConnected(_options, connectedClient);
+
             await connectedClient.RunAsync().ConfigureAwait(false);
         }
         catch (ObjectDisposedException)
@@ -472,6 +486,17 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
                             await DeleteSessionAsync(connectedClient.Id).ConfigureAwait(false);
                         }
                     }
+
+                    // Fire only when ClientConnected fired earlier (Id assignment
+                    // happens inside CreateClientConnection, same point the connect
+                    // hook runs). Takeover and a peer-sent DISCONNECT are
+                    // distinguished from an abrupt drop here.
+                    var disconnectType = connectedClient.IsTakenOver
+                        ? MqttClientDisconnectType.Takeover
+                        : connectedClient.DisconnectPacket != null
+                            ? MqttClientDisconnectType.Clean
+                            : MqttClientDisconnectType.NotClean;
+                    InvokeClientDisconnected(_options, connectedClient, disconnectType);
                 }
             }
 
@@ -827,5 +852,75 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
         }
 
         return MqttConnectReasonCode.Success;
+    }
+
+    // Function-pointer call must happen in an unsafe synchronous helper —
+    // C# disallows unsafe blocks inside async methods on net8.0. Args are a
+    // ref struct so they can't cross an await boundary anyway.
+    private static unsafe MqttConnectReasonCode InvokeConnectionValidator(
+        MqttServerOptions options,
+        ref MqttConnectPacket connectPacket,
+        MqttChannelAdapter channelAdapter)
+    {
+        var validator = options.ConnectionValidator;
+        if (validator == null)
+        {
+            return MqttConnectReasonCode.Success;
+        }
+
+        var args = new MqttConnectionValidatorArgs
+        {
+            ClientId = connectPacket.ClientId.AsSpan(),
+            Username = connectPacket.Username.AsSpan(),
+            Password = connectPacket.Password.AsSpan(),
+            AuthenticationMethod = connectPacket.AuthenticationMethod.AsSpan(),
+            AuthenticationData = connectPacket.AuthenticationData.AsSpan(),
+            IsSecureConnection = channelAdapter.IsSecureConnection,
+            ProtocolVersion = channelAdapter.PacketFormatterAdapter.ProtocolVersion,
+            RemoteEndPoint = channelAdapter.RemoteEndPoint,
+            ClientCertificate = channelAdapter.ClientCertificate,
+            CleanSession = connectPacket.CleanSession,
+        };
+        return validator(in args);
+    }
+
+    private static unsafe void InvokeClientConnected(MqttServerOptions options, MqttConnectedClient connectedClient)
+    {
+        var hook = options.ClientConnectedInterceptor;
+        if (hook == null)
+        {
+            return;
+        }
+
+        var args = new MqttClientConnectedArgs
+        {
+            ClientId = connectedClient.Id,
+            UserName = connectedClient.UserName,
+            IsSecureConnection = connectedClient.ChannelAdapter.IsSecureConnection,
+            RemoteEndPoint = connectedClient.RemoteEndPoint,
+        };
+        hook(in args);
+    }
+
+    private static unsafe void InvokeClientDisconnected(
+        MqttServerOptions options,
+        MqttConnectedClient connectedClient,
+        MqttClientDisconnectType disconnectType)
+    {
+        var hook = options.ClientDisconnectedInterceptor;
+        if (hook == null)
+        {
+            return;
+        }
+
+        var args = new MqttClientDisconnectedArgs
+        {
+            ClientId = connectedClient.Id,
+            UserName = connectedClient.UserName,
+            IsSecureConnection = connectedClient.ChannelAdapter.IsSecureConnection,
+            RemoteEndPoint = connectedClient.RemoteEndPoint,
+            DisconnectType = disconnectType,
+        };
+        hook(in args);
     }
 }

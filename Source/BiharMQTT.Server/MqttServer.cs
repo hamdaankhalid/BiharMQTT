@@ -118,12 +118,6 @@ public class MqttServer : Disposable
     }
 
     /// <summary>
-    ///     Injects an application message using a stack-allocated <see cref="MqttBufferedApplicationMessage" />.
-    ///     This overload avoids the heap allocations of <see cref="InjectedMqttApplicationMessage" /> and
-    ///     <see cref="MqttApplicationMessage" /> and allows the caller to supply a pooled
-    ///     <see cref="ReadOnlyMemory{T}" /> payload that can be reclaimed once this method completes.
-    /// </summary>
-    /// <summary>
     /// Server-side publish entry point. Zero allocations on the call site:
     /// <paramref name="topic"/> and <paramref name="payload"/> are <strong>borrowed</strong>
     /// for the duration of this call only — the dispatch chain copies bytes into
@@ -151,32 +145,6 @@ public class MqttServer : Disposable
             payload,
             qualityOfServiceLevel,
             retain);
-    }
-
-    public Task InjectApplicationMessage(
-        MqttBufferedApplicationMessage message,
-        string senderClientId = "",
-        string senderUserName = null,
-        IDictionary customSessionItems = null)
-    {
-        if (string.IsNullOrEmpty(message.Topic))
-        {
-            throw new NotSupportedException("Injected application messages must contain a topic (topic alias is not supported)");
-        }
-
-        MqttTopicValidator.ThrowIfInvalid(message.Topic);
-
-        ThrowIfNotStarted();
-
-        var sessionItems = customSessionItems ?? ServerSessionItems;
-
-        _clientSessionsManager.DispatchApplicationMessage(
-            senderClientId ?? string.Empty,
-            senderUserName,
-            sessionItems,
-            message);
-
-        return Task.CompletedTask;
     }
 
     public async Task StartAsync()
