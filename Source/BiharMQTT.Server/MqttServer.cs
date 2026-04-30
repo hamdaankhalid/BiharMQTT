@@ -147,7 +147,7 @@ public class MqttServer : Disposable
             retain);
     }
 
-    public async Task StartAsync()
+    public void Start()
     {
         ThrowIfStarted();
 
@@ -156,11 +156,11 @@ public class MqttServer : Disposable
         _cancellationTokenSource = new CancellationTokenSource();
         var cancellationToken = _cancellationTokenSource.Token;
 
-        await _retainedMessagesManager.Start().ConfigureAwait(false);
+        _retainedMessagesManager.Start();
         _clientSessionsManager.Start();
         _keepAliveMonitor.Start(cancellationToken);
 
-        await _adapter.StartAsync(_options, _rootLogger, c => OnHandleClient(c, cancellationToken)).ConfigureAwait(false);
+        _adapter.Start(_options, _rootLogger, c => OnHandleClient(c, cancellationToken));
 
         _logger.Info("Started");
     }

@@ -24,7 +24,7 @@ public sealed class MqttTcpServerAdapter : IDisposable
         Cleanup();
     }
 
-    public Task StartAsync(MqttServerOptions options, IMqttNetLogger logger, Func<MqttChannelAdapter, Task> clientHandler)
+    public void Start(MqttServerOptions options, IMqttNetLogger logger, Func<MqttChannelAdapter, Task> clientHandler)
     {
         if (_cancellationTokenSource != null)
         {
@@ -51,8 +51,6 @@ public sealed class MqttTcpServerAdapter : IDisposable
 
             RegisterListeners(options.TlsEndpointOptions, logger, clientHandler, _cancellationTokenSource.Token);
         }
-
-        return Task.CompletedTask;
     }
 
     public Task StopAsync()

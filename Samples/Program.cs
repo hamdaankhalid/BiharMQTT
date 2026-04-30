@@ -21,7 +21,7 @@ var mqttServerOptions = new MqttServerOptionsBuilder()
 unsafe { mqttServerOptions.PublishInterceptor = &AllowAllInterceptor; }
 
 using var mqttServer = mqttServerFactory.CreateMqttServer(mqttServerOptions, logger);
-await mqttServer.StartAsync();
+mqttServer.Start();
 
 Console.WriteLine("BiharMQTT broker running on tcp://localhost:1883");
 Console.WriteLine("Press Ctrl+C to stop.");

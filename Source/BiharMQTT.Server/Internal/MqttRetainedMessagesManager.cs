@@ -54,7 +54,7 @@ public sealed class MqttRetainedMessagesManager : IDisposable
         }
     }
 
-    public async Task Start()
+    public void Start()
     {
         try
         {

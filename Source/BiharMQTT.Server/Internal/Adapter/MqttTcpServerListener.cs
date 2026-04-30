@@ -24,8 +24,11 @@ public sealed class MqttTcpServerListener : IDisposable
     readonly MqttServerTlsTcpEndpointOptions _tlsOptions;
     readonly Func<MqttChannelAdapter, Task> _clientHandler;
 
+    // Accept loop socket and event args
+    SocketAsyncEventArgs _acceptAsyncEventArgs;
     Socket _socket;
     IPEndPoint _localEndPoint;
+    CancellationToken _listenerCancellationToken;
 
     public MqttTcpServerListener(
         AddressFamily addressFamily,
@@ -110,7 +113,13 @@ public sealed class MqttTcpServerListener : IDisposable
 
             _logger.Verbose("TCP listener started (Endpoint={0})", _localEndPoint);
 
-            Task.Run(() => AcceptClientConnectionsAsync(cancellationToken), cancellationToken).RunInBackground(_logger);
+            _listenerCancellationToken = cancellationToken;
+            _acceptAsyncEventArgs = new SocketAsyncEventArgs();
+            _acceptAsyncEventArgs.Completed += OnAcceptCompleted;
+
+            // Kick off the initial accept on a worker so Start does not have to drain
+            // any pre-queued backlog inline. Subsequent re-arms run on the IO completion thread.
+            Task.Run(StartAccept, cancellationToken).RunInBackground(_logger);
 
             return true;
         }
@@ -129,41 +138,75 @@ public sealed class MqttTcpServerListener : IDisposable
     public void Dispose()
     {
         _socket?.Dispose();
+        _acceptAsyncEventArgs?.Dispose();
     }
 
-    // Accept loop for incoming TCP client connections
-    async Task AcceptClientConnectionsAsync(CancellationToken cancellationToken)
+    // Posts an accept on the listening socket. AcceptAsync returns false when the operation
+    // completed synchronously (process inline and loop) and true when it will fire Completed.
+    void StartAccept()
     {
-        while (!cancellationToken.IsCancellationRequested)
+        var socket = _socket;
+        if (socket == null)
         {
-            try
+            return;
+        }
+
+        try
+        {
+            while (!_listenerCancellationToken.IsCancellationRequested)
             {
-                var clientSocket = await _socket.AcceptAsync(cancellationToken).ConfigureAwait(false);
-                if (clientSocket == null)
+                _acceptAsyncEventArgs.AcceptSocket = null;
+
+                if (socket.AcceptAsync(_acceptAsyncEventArgs))
                 {
-                    continue;
+                    // Pending — OnAcceptCompleted will resume the loop.
+                    return;
                 }
 
-                // Handling is pyt off to another task always
-                _ = Task.Factory.StartNew(() => TryHandleClientConnectionAsync(clientSocket), cancellationToken, TaskCreationOptions.PreferFairness, TaskScheduler.Default).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            catch (Exception exception)
-            {
-                if (exception is SocketException socketException)
-                {
-                    if (socketException.SocketErrorCode is SocketError.ConnectionAborted or SocketError.OperationAborted)
-                    {
-                        continue;
-                    }
-                }
-
-                _logger.Error(exception, "Error while accepting TCP connection (Endpoint={0})", _localEndPoint);
-                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+                ProcessAccept(_acceptAsyncEventArgs);
             }
         }
+        catch (ObjectDisposedException)
+        {
+            // Listener socket disposed during shutdown.
+        }
+        catch (Exception exception)
+        {
+            _logger.Error(exception, "Error while issuing AcceptAsync (Endpoint={0})", _localEndPoint);
+        }
+    }
+
+    void OnAcceptCompleted(object sender, SocketAsyncEventArgs e)
+    {
+        ProcessAccept(e);
+        StartAccept();
+    }
+
+    void ProcessAccept(SocketAsyncEventArgs e)
+    {
+        if (e.SocketError != SocketError.Success)
+        {
+            if (e.SocketError is SocketError.ConnectionAborted or SocketError.OperationAborted)
+            {
+                return;
+            }
+
+            _logger.Error(null, "Error while accepting TCP connection (SocketError={0}, Endpoint={1})", e.SocketError, _localEndPoint);
+            return;
+        }
+
+        var clientSocket = e.AcceptSocket;
+        if (clientSocket == null)
+        {
+            return;
+        }
+
+        // Handling is put off to another task always so the accept loop is never blocked.
+        _ = Task.Factory.StartNew(
+            () => TryHandleClientConnectionAsync(clientSocket),
+            _listenerCancellationToken,
+            TaskCreationOptions.PreferFairness,
+            TaskScheduler.Default);
     }
 
     async Task TryHandleClientConnectionAsync(Socket clientSocket)

@@ -32,7 +32,7 @@ public static class Server_TLS_Samples
         var mqttServerOptions = new MqttServerOptionsBuilder().WithDefaultEndpoint().Build();//WithEncryptionCertificate(certificate).WithEncryptedEndpoint().Build();
 
         using var mqttServer = mqttServerFactory.CreateMqttServer(mqttServerOptions);
-        await mqttServer.StartAsync();
+        mqttServer.Start();
 
         Console.WriteLine("Press Enter to exit.");
         Console.ReadLine();

@@ -58,6 +58,9 @@ public sealed class MqttChannelAdapter : Disposable
     readonly ReceiveCompletionHandler _onFixedHeaderRead;
     readonly ReceiveCompletionHandler _onRemainingLengthRead;
     readonly ReceiveCompletionHandler _onBodyRead;
+    readonly Action _beginReadFixedHeader;
+    readonly Action _beginReadRemainingLength;
+    readonly Action _beginReadBody;
 
     int _fhTotalRead;
     int _rlMultiplier;
@@ -81,6 +84,9 @@ public sealed class MqttChannelAdapter : Disposable
         _onFixedHeaderRead = OnFixedHeaderRead;
         _onRemainingLengthRead = OnRemainingLengthRead;
         _onBodyRead = OnBodyRead;
+        _beginReadFixedHeader = BeginReadFixedHeader;
+        _beginReadRemainingLength = BeginReadRemainingLength;
+        _beginReadBody = BeginReadBody;
     }
 
     public bool AllowPacketFragmentation { get; set; } = true;
@@ -350,7 +356,7 @@ public sealed class MqttChannelAdapter : Disposable
         _fhTotalRead += bytesRead;
         if (_fhTotalRead < 2)
         {
-            ContinueOrPunt(BeginReadFixedHeader);
+            ContinueOrPunt(_beginReadFixedHeader);
             return;
         }
 
@@ -367,7 +373,7 @@ public sealed class MqttChannelAdapter : Disposable
         }
 
         _rlValue = _fixedHeaderBuffer[1] & 0x7F;
-        ContinueOrPunt(BeginReadRemainingLength);
+        ContinueOrPunt(_beginReadRemainingLength);
     }
 
     void BeginReadRemainingLength()
@@ -403,7 +409,7 @@ public sealed class MqttChannelAdapter : Disposable
 
         if ((encoded & 0x80) != 0)
         {
-            ContinueOrPunt(BeginReadRemainingLength);
+            ContinueOrPunt(_beginReadRemainingLength);
             return;
         }
 
@@ -427,7 +433,7 @@ public sealed class MqttChannelAdapter : Disposable
             _reusableBodyBuffer = ArrayPool<byte>.Shared.Rent(_bodyLength);
         }
 
-        ContinueOrPunt(BeginReadBody);
+        ContinueOrPunt(_beginReadBody);
     }
 
     void BeginReadBody()
@@ -454,7 +460,7 @@ public sealed class MqttChannelAdapter : Disposable
         _bodyOffset += bytesRead;
         if (_bodyOffset < _bodyLength)
         {
-            ContinueOrPunt(BeginReadBody);
+            ContinueOrPunt(_beginReadBody);
             return;
         }
 
