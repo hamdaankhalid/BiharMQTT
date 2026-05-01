@@ -29,7 +29,11 @@ public static class Server_TLS_Samples
         // This certificate is self signed so that
         var certificate = CreateSelfSignedCertificate("1.3.6.1.5.5.7.3.1");
 
-        var mqttServerOptions = new MqttServerOptionsBuilder().WithDefaultEndpoint().Build();//WithEncryptionCertificate(certificate).WithEncryptedEndpoint().Build();
+        var mqttServerOptions = new MqttServerOptionsBuilder()
+            .WithDefaultEndpoint()
+            .WithEncryptedEndpoint()
+            .WithEncryptionCertificate(certificate)
+            .Build();
 
         using var mqttServer = mqttServerFactory.CreateMqttServer(mqttServerOptions);
         mqttServer.Start();
@@ -41,7 +45,7 @@ public static class Server_TLS_Samples
         await mqttServer.StopAsync();
     }
 
-    static X509Certificate2 CreateSelfSignedCertificate(string oid)
+    public static X509Certificate2 CreateSelfSignedCertificate(string oid)
     {
         var sanBuilder = new SubjectAlternativeNameBuilder();
         sanBuilder.AddIpAddress(IPAddress.Loopback);

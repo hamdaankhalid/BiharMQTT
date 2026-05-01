@@ -6,25 +6,56 @@ using System.Security.Cryptography.X509Certificates;
 
 namespace BiharMQTT.Certificates;
 
-public class BlobCertificateProvider(byte[] blob) : ICertificateProvider
+public class BlobCertificateProvider : ICertificateProvider
 {
-    public byte[] Blob { get; } = blob ?? throw new ArgumentNullException(nameof(blob));
+    public BlobCertificateProvider(byte[] blob)
+    {
+        Blob = blob ?? throw new ArgumentNullException(nameof(blob));
+        // Defer parse to first GetCertificate() call — Password is a settable property on
+        // this type and is typically assigned through an object initializer after the ctor
+        // runs. Caching after first parse still avoids the per-handshake re-parse that the
+        // unmanaged key handle leak was tied to.
+    }
+
+    public byte[] Blob { get; }
 
     public string Password { get; set; }
 
     public X509Certificate2 GetCertificate()
     {
-        #if NET10_0_OR_GREATER
+        // Single-init via lock-free double-checked pattern would require a volatile field;
+        // a plain lock here is fine — GetCertificate is called once per provider lifetime
+        // off the steady-state hot path (provider is built at server boot, the listener
+        // calls this before the first handshake).
+        var existing = _cached;
+        if (existing != null)
+        {
+            return existing;
+        }
 
+        lock (_cacheLock)
+        {
+            if (_cached == null)
+            {
+                _cached = LoadFromBlob();
+            }
+            return _cached;
+        }
+    }
+
+    readonly object _cacheLock = new();
+    X509Certificate2 _cached;
+
+    X509Certificate2 LoadFromBlob()
+    {
+#if NET10_0_OR_GREATER
         if (string.IsNullOrEmpty(Password))
         {
             return X509CertificateLoader.LoadCertificate(Blob);
         }
 
         return X509CertificateLoader.LoadPkcs12(Blob, Password);
-
-        #else
-
+#else
         if (string.IsNullOrEmpty(Password))
         {
             // Use a different overload when no password is specified. Otherwise, the constructor will fail.
@@ -32,7 +63,6 @@ public class BlobCertificateProvider(byte[] blob) : ICertificateProvider
         }
 
         return new X509Certificate2(Blob, Password);
-
-        #endif
+#endif
     }
 }

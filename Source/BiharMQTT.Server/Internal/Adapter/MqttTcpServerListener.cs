@@ -212,6 +212,7 @@ public sealed class MqttTcpServerListener : IDisposable
     async Task TryHandleClientConnectionAsync(Socket clientSocket)
     {
         Stream stream = null;
+        SslStream sslStream = null;
         EndPoint remoteEndPoint = null;
         var ownershipTransferred = false;
 
@@ -223,23 +224,27 @@ public sealed class MqttTcpServerListener : IDisposable
 
             clientSocket.NoDelay = _options.NoDelay;
 
-            SslStream sslStream = null;
-            X509Certificate2 clientCertificate = _tlsOptions?.CertificateProvider?.GetCertificate();
+            X509Certificate2 peerCertificate = null;
 
-            if (clientCertificate != null)
+            if (_tlsOptions != null)
             {
-                if (!clientCertificate.HasPrivateKey)
+                var serverCertificate = _tlsOptions.CertificateProvider?.GetCertificate();
+                if (serverCertificate == null)
                 {
-                    throw new InvalidOperationException("The certificate for TLS encryption must contain the private key.");
+                    // Adapter.Start eagerly validates this at boot, but a hot-rotating
+                    // provider could still return null mid-flight. Fail this connection
+                    // loudly rather than silently fall through to plaintext: a peer dialing
+                    // 8883 expects TLS, and treating their ClientHello bytes as MQTT yields
+                    // baffling decoder errors instead.
+                    throw new InvalidOperationException(
+                        "TLS endpoint configured but the certificate provider returned a null certificate.");
                 }
 
                 // NetworkStream owns the socket = false, since MqttTcpChannel will own the socket directly.
                 stream = new NetworkStream(clientSocket, ownsSocket: false);
-                sslStream = new SslStream(stream, false, _tlsOptions.RemoteCertificateValidationCallback);
+                sslStream = new SslStream(stream, leaveInnerStreamOpen: false, _tlsOptions.RemoteCertificateValidationCallback);
 
-                X509Certificate2Collection intermediates = _tlsOptions.CertificateProvider.GetIntermediateCertificates();
-
-                SslServerAuthenticationOptions authOptions = new SslServerAuthenticationOptions
+                var authOptions = new SslServerAuthenticationOptions
                 {
                     ClientCertificateRequired = _tlsOptions.ClientCertificateRequired,
                     EnabledSslProtocols = _tlsOptions.SslProtocol,
@@ -248,39 +253,47 @@ public sealed class MqttTcpServerListener : IDisposable
                     CipherSuitesPolicy = _tlsOptions.CipherSuitesPolicy
                 };
 
-                if (intermediates is { Count: > 0 })
+                // Provider-cached context: built once per (offline) mode for the lifetime of
+                // the provider. Pre-fix this was rebuilt per connection with offline:false,
+                // which forced per-handshake chain validation and (on reachable networks)
+                // synchronous OCSP fetches — the visible "TLS hangs" symptom.
+                var ctx = _tlsOptions.CertificateProvider.GetServerCertificateContext(
+                    offline: !_tlsOptions.CheckCertificateRevocation);
+
+                if (ctx != null)
                 {
-                    // ServerCertificateContext is the only knob that makes the TLS stack
-                    // ship the intermediate chain in the ServerHello — setting ServerCertificate
-                    // alone causes only the leaf to be transmitted.
-                    authOptions.ServerCertificateContext = SslStreamCertificateContext.Create(
-                        clientCertificate, intermediates, offline: false);
+                    authOptions.ServerCertificateContext = ctx;
                 }
                 else
                 {
-                    authOptions.ServerCertificate = clientCertificate;
+                    authOptions.ServerCertificate = serverCertificate;
                 }
 
-                await sslStream.AuthenticateAsServerAsync(authOptions).ConfigureAwait(false);
+                using var timeoutCts = new CancellationTokenSource(_serverOptions.DefaultCommunicationTimeout);
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, _listenerCancellationToken);
+
+                await sslStream.AuthenticateAsServerAsync(authOptions, linkedCts.Token).ConfigureAwait(false);
 
                 stream = sslStream;
 
-                clientCertificate = sslStream.RemoteCertificate as X509Certificate2;
+                peerCertificate = sslStream.RemoteCertificate as X509Certificate2;
 
-                // TODO: Check why this export is needed. Is there something else in the RemoteCertificate as a X509Certificate2???
-                if (clientCertificate == null && sslStream.RemoteCertificate != null)
+                // RemoteCertificate is documented to be an X509Certificate (the base type).
+                // On older paths the cast above can return null even when a peer cert is
+                // present; export-then-load gives us a usable X509Certificate2.
+                if (peerCertificate == null && sslStream.RemoteCertificate != null)
                 {
 #if NET10_0_OR_GREATER
-                    clientCertificate = X509CertificateLoader.LoadCertificate(sslStream.RemoteCertificate.Export(X509ContentType.Cert));
+                    peerCertificate = X509CertificateLoader.LoadCertificate(sslStream.RemoteCertificate.Export(X509ContentType.Cert));
 #else
-                    clientCertificate = new X509Certificate2(sslStream.RemoteCertificate.Export(X509ContentType.Cert));
+                    peerCertificate = new X509Certificate2(sslStream.RemoteCertificate.Export(X509ContentType.Cert));
 #endif
                 }
             }
 
             // Channel takes ownership of both socket and stream (SslStream or null).
             // After this point, MqttChannelAdapter.Dispose will clean up via MqttTcpChannel.Dispose.
-            var tcpChannel = new MqttTcpChannel(clientSocket, sslStream, _localEndPoint, remoteEndPoint, clientCertificate);
+            var tcpChannel = new MqttTcpChannel(clientSocket, sslStream, _localEndPoint, remoteEndPoint, peerCertificate);
             ownershipTransferred = true;
 
             var bufferWriter = new MqttBufferWriter(_serverOptions.WriterBufferSize);
@@ -314,11 +327,24 @@ public sealed class MqttTcpServerListener : IDisposable
             {
                 try
                 {
-                    if (stream != null)
+                    // On TLS-auth failure `stream` still points to the raw NetworkStream
+                    // and `sslStream` was never assigned to `stream` (that only happens after
+                    // a successful AuthenticateAsServerAsync). Dispose the SslStream — it
+                    // owns the inner NetworkStream (leaveInnerStreamOpen: false above) so
+                    // the stream chain is released. On non-TLS or pre-SslStream paths fall
+                    // back to disposing whatever `stream` we have.
+                    if (sslStream != null && !ReferenceEquals(stream, sslStream))
+                    {
+                        await sslStream.DisposeAsync().ConfigureAwait(false);
+                    }
+                    else if (stream != null)
                     {
                         await stream.DisposeAsync().ConfigureAwait(false);
                     }
 
+                    // NetworkStream above was constructed with ownsSocket:false, so the
+                    // socket has to be closed explicitly regardless of which stream we just
+                    // disposed.
                     clientSocket?.Dispose();
                 }
                 catch (Exception disposeException)

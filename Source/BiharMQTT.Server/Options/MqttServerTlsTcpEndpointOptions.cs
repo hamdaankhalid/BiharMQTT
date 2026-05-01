@@ -20,6 +20,16 @@ public sealed class MqttServerTlsTcpEndpointOptions : MqttServerTcpEndpointBaseO
 
     public bool ClientCertificateRequired { get; set; }
 
+    /// <summary>
+    /// Drives two TLS revocation behaviors:
+    ///  - peer certificate validation mode (<c>X509RevocationMode.Online</c> when true, <c>NoCheck</c> when false), and
+    ///  - the <c>offline</c> flag passed to <c>SslStreamCertificateContext.Create</c> when an
+    ///    intermediate chain is configured. False (default) means the stack will not fetch OCSP
+    ///    responses for stapling and the context build is fully offline; true allows a synchronous
+    ///    network round-trip on the first context build per provider.
+    /// Single flag for both knobs by design; deployments that need to split the two should
+    /// open an issue.
+    /// </summary>
     public bool CheckCertificateRevocation { get; set; }
 
     /// <summary>

@@ -8,11 +8,15 @@ using MQTTnet.Protocol;
 
 // Broker-agnostic MQTT v5 test client.
 // Tests: fan-out pub/sub, topic lifecycle, concurrent producers/consumers.
-// Usage: dotnet run [host] [port]
+// Usage: dotnet run [host] [port] [--tls] [--smoke]
 //   defaults: localhost 1883
+//   --tls   : wrap connection in TLS (accepts self-signed certs — for local sample broker)
+//   --smoke : run a quick pub/sub roundtrip instead of the full bombard test
 
 internal class Program
 {
+    static MqttFactory factory = new MqttFactory();
+    static bool useTls;
 
     static async Task RunTest(string name, Func<Task> test, Action onPassed, Action onFailed)
     {
@@ -24,7 +28,6 @@ internal class Program
             sw.Stop();
             Console.WriteLine($"PASS ({sw.ElapsedMilliseconds}ms)");
             onPassed();
-            // Interlocked.Increment(ref passed);
         }
         catch (Exception ex)
         {
@@ -32,37 +35,92 @@ internal class Program
             Console.WriteLine($"FAIL ({sw.ElapsedMilliseconds}ms)");
             Console.WriteLine($"    {ex.GetType().Name}: {ex.Message}");
             onFailed();
-            // Interlocked.Increment(ref failed);
         }
     }
-
-    static MqttFactory factory = new MqttFactory();
 
     static async Task<IMqttClient> Connect(string host, int port, string? clientId = null)
     {
         var client = factory.CreateMqttClient();
-        var opts = new MqttClientOptionsBuilder()
+        var optsBuilder = new MqttClientOptionsBuilder()
             .WithTcpServer(host, port)
             .WithProtocolVersion(MQTTnet.Formatter.MqttProtocolVersion.V500)
             .WithCleanSession(true);
 
         if (clientId != null)
-            opts.WithClientId(clientId);
+            optsBuilder.WithClientId(clientId);
 
-        await client.ConnectAsync(opts.Build());
+        if (useTls)
+        {
+            optsBuilder.WithTlsOptions(o => o
+                .UseTls(true)
+                // Sample broker uses an in-memory self-signed cert. Trust everything for the
+                // smoke test — production clients would pin the CA / cert thumbprint.
+                .WithCertificateValidationHandler(_ => true)
+                .WithIgnoreCertificateRevocationErrors(true)
+                .WithIgnoreCertificateChainErrors(true)
+                .WithAllowUntrustedCertificates(true));
+        }
+
+        await client.ConnectAsync(optsBuilder.Build());
         return client;
     }
 
     private static async Task Main(string[] args)
     {
-        var host = args.Length > 0 ? args[0] : "localhost";
-        var port = args.Length > 1 ? int.Parse(args[1]) : 1883;
+        var positional = args.Where(a => !a.StartsWith("--")).ToArray();
+        var flags = new HashSet<string>(args.Where(a => a.StartsWith("--")));
 
-        Console.WriteLine($"MQTT Test Client — targeting {host}:{port}");
+        var host = positional.Length > 0 ? positional[0] : "localhost";
+        var defaultPort = flags.Contains("--tls") ? 8883 : 1883;
+        var port = positional.Length > 1 ? int.Parse(positional[1]) : defaultPort;
+        useTls = flags.Contains("--tls");
+        var smoke = flags.Contains("--smoke");
+
+        Console.WriteLine($"MQTT Test Client — targeting {(useTls ? "tcps" : "tcp")}://{host}:{port}{(smoke ? " (smoke)" : "")}");
         Console.WriteLine(new string('=', 50));
 
         var passed = 0;
         var failed = 0;
+
+        if (smoke)
+        {
+            await RunTest("smoke pub/sub roundtrip", async () =>
+            {
+                using var sub = await Connect(host, port, "smoke-sub");
+                var received = new ConcurrentBag<string>();
+                var gotAll = new TaskCompletionSource();
+                sub.ApplicationMessageReceivedAsync += e =>
+                {
+                    var payload = Encoding.UTF8.GetString(e.ApplicationMessage.PayloadSegment);
+                    received.Add(payload);
+                    if (received.Count >= 5) gotAll.TrySetResult();
+                    return Task.CompletedTask;
+                };
+                await sub.SubscribeAsync(new MqttTopicFilterBuilder().WithTopic("smoke/+").Build());
+
+                using var pub = await Connect(host, port, "smoke-pub");
+                for (var i = 0; i < 5; i++)
+                {
+                    await pub.PublishAsync(new MqttApplicationMessageBuilder()
+                        .WithTopic("smoke/test")
+                        .WithPayload($"hello-{i}")
+                        .Build());
+                }
+
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                await using var _ = cts.Token.Register(() => gotAll.TrySetException(new TimeoutException("timed out waiting for 5 messages")));
+                await gotAll.Task;
+
+                if (received.Count < 5)
+                {
+                    throw new Exception($"expected >=5 messages, got {received.Count}");
+                }
+            }, () => passed++, () => failed++);
+
+            Console.WriteLine();
+            Console.WriteLine($"Result: {passed} passed, {failed} failed");
+            Environment.Exit(failed == 0 ? 0 : 1);
+        }
 
         Console.WriteLine("\n Bombard server scale test");
 

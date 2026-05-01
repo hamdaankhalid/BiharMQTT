@@ -49,6 +49,15 @@ public sealed class MqttTcpServerAdapter : IDisposable
                 throw new ArgumentException("TLS certificate is not set.");
             }
 
+            // Resolve the certificate once at boot so misconfiguration (null cert, bad blob,
+            // wrong PFX password) surfaces here instead of as a baffling first-handshake
+            // failure later. Hot-rotating providers that legitimately produce null until a
+            // later moment should override this — but those are not the common shape.
+            if (options.TlsEndpointOptions.CertificateProvider.GetCertificate() == null)
+            {
+                throw new ArgumentException("TLS certificate provider returned a null certificate.");
+            }
+
             RegisterListeners(options.TlsEndpointOptions, logger, clientHandler, _cancellationTokenSource.Token);
         }
     }

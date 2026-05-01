@@ -418,7 +418,11 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
         }
         catch (Exception exception)
         {
-            _logger.Error(exception, exception.Message);
+            // Connect-decode failures happen before connectedClient is assigned, so the
+            // MQTT ClientId isn't available yet — fall back to the remote endpoint so
+            // operators can still attribute a protocol violation to a peer.
+            var clientIdentifier = connectedClient?.Id ?? channelAdapter.RemoteEndPoint?.ToString() ?? "<unknown>";
+            _logger.Error(exception, "Client '{0}': {1}", clientIdentifier, exception.Message);
         }
         finally
         {
@@ -738,11 +742,12 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
 
     async Task<(bool Success, MqttConnectPacket Packet)> ReceiveConnectPacket(MqttChannelAdapter channelAdapter, CancellationToken cancellationToken)
     {
+        ReceivedMqttPacket receivedPacket = default;
         try
         {
             using var timeoutToken = new CancellationTokenSource(_options.DefaultCommunicationTimeout);
             using var effectiveCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(timeoutToken.Token, cancellationToken);
-            var receivedPacket = await channelAdapter.ReceivePacketAsync(effectiveCancellationToken.Token).ConfigureAwait(false);
+            receivedPacket = await channelAdapter.ReceivePacketAsync(effectiveCancellationToken.Token).ConfigureAwait(false);
             if (receivedPacket.TotalLength > 0 && receivedPacket.PacketType == MqttControlPacketType.Connect)
             {
                 var decoder = channelAdapter.PacketFormatterAdapter.Decoder;
@@ -757,6 +762,16 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
         catch (MqttCommunicationTimedOutException)
         {
             _logger.Warning("Client '{0}': Connected but did not sent a CONNECT packet.", channelAdapter.RemoteEndPoint);
+        }
+        catch (MqttProtocolViolationException protocolViolation)
+        {
+            // Capture the offending CONNECT body so an operator can decode it offline
+            // when an embedded client reports only a generic socket error (e.g. POLLERR).
+            var body = receivedPacket.Body;
+            var hex = body.Count > 0 ? Convert.ToHexString(body.AsSpan()) : "<empty>";
+            var detail = $"{body.Count} bytes hex={hex} reason={protocolViolation.Message}";
+            _logger.Warning("Client '{0}': Malformed CONNECT packet — {1}", channelAdapter.RemoteEndPoint, detail);
+            throw;
         }
 
         _logger.Warning("Client '{0}': First received packet was no 'CONNECT' packet [MQTT-3.1.0-1].", channelAdapter.RemoteEndPoint);
