@@ -237,16 +237,31 @@ public sealed class MqttTcpServerListener : IDisposable
                 stream = new NetworkStream(clientSocket, ownsSocket: false);
                 sslStream = new SslStream(stream, false, _tlsOptions.RemoteCertificateValidationCallback);
 
-                await sslStream.AuthenticateAsServerAsync(
-                    new SslServerAuthenticationOptions
-                    {
-                        ServerCertificate = clientCertificate,
-                        ClientCertificateRequired = _tlsOptions.ClientCertificateRequired,
-                        EnabledSslProtocols = _tlsOptions.SslProtocol,
-                        CertificateRevocationCheckMode = _tlsOptions.CheckCertificateRevocation ? X509RevocationMode.Online : X509RevocationMode.NoCheck,
-                        EncryptionPolicy = EncryptionPolicy.RequireEncryption,
-                        CipherSuitesPolicy = _tlsOptions.CipherSuitesPolicy
-                    }).ConfigureAwait(false);
+                X509Certificate2Collection intermediates = _tlsOptions.CertificateProvider.GetIntermediateCertificates();
+
+                SslServerAuthenticationOptions authOptions = new SslServerAuthenticationOptions
+                {
+                    ClientCertificateRequired = _tlsOptions.ClientCertificateRequired,
+                    EnabledSslProtocols = _tlsOptions.SslProtocol,
+                    CertificateRevocationCheckMode = _tlsOptions.CheckCertificateRevocation ? X509RevocationMode.Online : X509RevocationMode.NoCheck,
+                    EncryptionPolicy = EncryptionPolicy.RequireEncryption,
+                    CipherSuitesPolicy = _tlsOptions.CipherSuitesPolicy
+                };
+
+                if (intermediates is { Count: > 0 })
+                {
+                    // ServerCertificateContext is the only knob that makes the TLS stack
+                    // ship the intermediate chain in the ServerHello — setting ServerCertificate
+                    // alone causes only the leaf to be transmitted.
+                    authOptions.ServerCertificateContext = SslStreamCertificateContext.Create(
+                        clientCertificate, intermediates, offline: false);
+                }
+                else
+                {
+                    authOptions.ServerCertificate = clientCertificate;
+                }
+
+                await sslStream.AuthenticateAsServerAsync(authOptions).ConfigureAwait(false);
 
                 stream = sslStream;
 
@@ -255,11 +270,11 @@ public sealed class MqttTcpServerListener : IDisposable
                 // TODO: Check why this export is needed. Is there something else in the RemoteCertificate as a X509Certificate2???
                 if (clientCertificate == null && sslStream.RemoteCertificate != null)
                 {
-                    #if NET10_0_OR_GREATER
+#if NET10_0_OR_GREATER
                     clientCertificate = X509CertificateLoader.LoadCertificate(sslStream.RemoteCertificate.Export(X509ContentType.Cert));
-                    #else
+#else
                     clientCertificate = new X509Certificate2(sslStream.RemoteCertificate.Export(X509ContentType.Cert));
-                    #endif
+#endif
                 }
             }
 
@@ -271,7 +286,7 @@ public sealed class MqttTcpServerListener : IDisposable
             var bufferWriter = new MqttBufferWriter(_serverOptions.WriterBufferSize);
             var packetFormatterAdapter = new MqttPacketFormatterAdapter(bufferWriter);
 
-                using var clientAdapter = new MqttChannelAdapter(tcpChannel, packetFormatterAdapter, _rootLogger);
+            using var clientAdapter = new MqttChannelAdapter(tcpChannel, packetFormatterAdapter, _rootLogger);
             clientAdapter.AllowPacketFragmentation = _options.AllowPacketFragmentation;
             await _clientHandler(clientAdapter).ConfigureAwait(false);
         }

@@ -135,6 +135,19 @@ public class MqttServerOptionsBuilder
         return this;
     }
 
+    /// <summary>
+    /// Configure the TLS leaf and the intermediate chain to present in the ServerHello.
+    /// Use this when peers (e.g. nRF devices) only carry the root CA in their trust store
+    /// and need the server to transmit the full chain.
+    /// </summary>
+    public MqttServerOptionsBuilder WithEncryptionCertificate(X509Certificate2 certificate, X509Certificate2Collection intermediates)
+    {
+        ArgumentNullException.ThrowIfNull(certificate);
+
+        _options.TlsEndpointOptions.CertificateProvider = new X509CertificateProvider(certificate, intermediates);
+        return this;
+    }
+
     public MqttServerOptionsBuilder WithEncryptionCertificate(ICertificateProvider certificateProvider)
     {
         ArgumentNullException.ThrowIfNull(certificateProvider);
