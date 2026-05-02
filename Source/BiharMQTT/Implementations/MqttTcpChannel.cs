@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
+using BiharMQTT.Diagnostics.Logger;
 using BiharMQTT.Exceptions;
 
 namespace BiharMQTT.Implementations;
@@ -27,6 +28,8 @@ public sealed class MqttTcpChannel : IDisposable
     // constructor; we don't re-subscribe per operation.
     readonly SocketAsyncEventArgs _recvSaea;
 
+    readonly MqttNetSourceLogger _logger;
+
     // The current receive completion callback. Cleared before invoking so a
     // synchronous re-arm from the callback can install a new handler without
     // racing with the previous SAEA completion.
@@ -35,8 +38,16 @@ public sealed class MqttTcpChannel : IDisposable
     /// <summary>
     /// Server-side constructor. The channel takes ownership of both socket and stream.
     /// For non-TLS: pass sslStream = null. For TLS: pass the authenticated SslStream.
+    /// The logger is only consulted on hot paths when <see cref="BiharMQTT.Diagnostics.BiharMqttDiagnostics.DebugEnabled"/>
+    /// is true, so it's safe to pass an always-on adapter.
     /// </summary>
-    public MqttTcpChannel(Socket socket, SslStream sslStream, EndPoint localEndPoint, EndPoint remoteEndPoint, X509Certificate2 clientCertificate)
+    public MqttTcpChannel(
+        Socket socket,
+        SslStream sslStream,
+        EndPoint localEndPoint,
+        EndPoint remoteEndPoint,
+        X509Certificate2 clientCertificate,
+        IMqttNetLogger logger = null)
     {
         _socket = socket ?? throw new ArgumentNullException(nameof(socket));
         _stream = sslStream;
@@ -49,6 +60,8 @@ public sealed class MqttTcpChannel : IDisposable
 
         _recvSaea = new SocketAsyncEventArgs();
         _recvSaea.Completed += OnRecvCompleted;
+
+        _logger = (logger ?? MqttNetNullLogger.Instance).WithSource(nameof(MqttTcpChannel));
     }
 
     public X509Certificate2 ClientCertificate { get; }
@@ -61,6 +74,8 @@ public sealed class MqttTcpChannel : IDisposable
 
     public void Dispose()
     {
+        _logger.Debug("Channel.Dispose (Remote={0})", RemoteEndPoint);
+
         try
         {
             _stream?.Close();
@@ -120,6 +135,7 @@ public sealed class MqttTcpChannel : IDisposable
         var socket = _socket;
         if (socket == null)
         {
+            _logger.Debug("BeginReceive on closed channel (Remote={0})", RemoteEndPoint);
             callback(0, new MqttCommunicationException("The TCP connection is closed."));
             return;
         }
@@ -134,6 +150,7 @@ public sealed class MqttTcpChannel : IDisposable
         }
         catch (Exception ex)
         {
+            _logger.Debug("ReceiveAsync threw (Remote={0}, Ex={1})", RemoteEndPoint, ex.GetType().Name);
             _recvCallback = null;
             callback(0, ex);
             return;
@@ -153,18 +170,34 @@ public sealed class MqttTcpChannel : IDisposable
     {
         var cb = _recvCallback;
         _recvCallback = null;
-        if (cb == null) return;
+        if (cb == null)
+        {
+            // Anomaly: SAEA fired but no callback was registered. Either the channel
+            // was disposed mid-flight or someone re-entered BeginReceive without
+            // waiting for the previous completion.
+            _logger.Debug("CompleteRecv with no callback (Remote={0}, SocketError={1}, Bytes={2})",
+                RemoteEndPoint, e.SocketError, e.BytesTransferred);
+            return;
+        }
 
         if (e.SocketError != SocketError.Success)
         {
+            _logger.Debug("Recv socket error (Remote={0}, SocketError={1})", RemoteEndPoint, e.SocketError);
             cb(0, new SocketException((int)e.SocketError));
             return;
+        }
+
+        if (e.BytesTransferred == 0)
+        {
+            // Peer half-close. Not strictly an anomaly but worth tracing — every
+            // healthy disconnect funnels through this path exactly once.
+            _logger.Debug("Recv peer half-close (Remote={0})", RemoteEndPoint);
         }
 
         cb(e.BytesTransferred, null);
     }
 
-    static void BeginReceiveTls(SslStream stream, Memory<byte> buffer, ReceiveCompletionHandler callback)
+    void BeginReceiveTls(SslStream stream, Memory<byte> buffer, ReceiveCompletionHandler callback)
     {
         ValueTask<int> vt;
         try
@@ -173,39 +206,54 @@ public sealed class MqttTcpChannel : IDisposable
         }
         catch (Exception ex)
         {
+            _logger.Debug("TLS ReadAsync threw (Remote={0}, Ex={1})", RemoteEndPoint, ex.GetType().Name);
             callback(0, ex);
             return;
         }
 
         if (vt.IsCompletedSuccessfully)
         {
-            callback(vt.Result, null);
+            // Bind Result to a local — ValueTask must be consumed exactly once.
+            var bytes = vt.Result;
+            if (bytes == 0) _logger.Debug("TLS recv peer half-close sync (Remote={0})", RemoteEndPoint);
+            callback(bytes, null);
             return;
         }
 
         if (vt.IsCompleted)
         {
-            try { callback(vt.Result, null); }
-            catch (Exception ex) { callback(0, ex); }
+            int bytes;
+            try { bytes = vt.Result; }
+            catch (Exception ex)
+            {
+                _logger.Debug("TLS sync-completed read faulted on result (Remote={0}, Ex={1})", RemoteEndPoint, ex.GetType().Name);
+                callback(0, ex);
+                return;
+            }
+            callback(bytes, null);
             return;
         }
 
         // Async path on TLS — bridge ValueTask completion to the callback.
         // SslStream's ValueTask is not always cached, so this can allocate;
-        // the non-TLS hot path avoids it entirely via SAEA.
-        vt.AsTask().ContinueWith(static (t, state) =>
+        // the non-TLS hot path avoids it entirely via SAEA. Captures `this` so
+        // anomalies can be logged through the channel logger.
+        vt.AsTask().ContinueWith((t, state) =>
         {
             var cb = (ReceiveCompletionHandler)state;
             if (t.IsFaulted)
             {
+                _logger.Debug("TLS async read faulted (Remote={0}, Ex={1})", RemoteEndPoint, t.Exception?.InnerException?.GetType().Name);
                 cb(0, t.Exception?.InnerException ?? t.Exception);
             }
             else if (t.IsCanceled)
             {
+                _logger.Debug("TLS async read canceled (Remote={0})", RemoteEndPoint);
                 cb(0, new OperationCanceledException());
             }
             else
             {
+                if (t.Result == 0) _logger.Debug("TLS recv peer half-close async (Remote={0})", RemoteEndPoint);
                 cb(t.Result, null);
             }
         }, callback, TaskContinuationOptions.ExecuteSynchronously);
@@ -249,26 +297,46 @@ public sealed class MqttTcpChannel : IDisposable
         var stream = _stream;
         if (stream != null)
         {
-            stream.Write(buffer.Span);
+            try
+            {
+                stream.Write(buffer.Span);
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug("TLS Write threw (Remote={0}, Bytes={1}, Ex={2})", RemoteEndPoint, buffer.Length, ex.GetType().Name);
+                throw;
+            }
             return;
         }
 
         var socket = _socket;
         if (socket == null)
         {
+            _logger.Debug("Write on closed channel (Remote={0}, Bytes={1})", RemoteEndPoint, buffer.Length);
             throw new MqttCommunicationException("The TCP connection is closed.");
         }
 
         Send(socket, buffer);
     }
 
-    static void Send(Socket socket, ReadOnlyMemory<byte> buffer)
+    void Send(Socket socket, ReadOnlyMemory<byte> buffer)
     {
         while (buffer.Length > 0)
         {
-            var sent = socket.Send(buffer.Span, SocketFlags.None);
+            int sent;
+            try
+            {
+                sent = socket.Send(buffer.Span, SocketFlags.None);
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug("Socket.Send threw (Remote={0}, Remaining={1}, Ex={2})", RemoteEndPoint, buffer.Length, ex.GetType().Name);
+                throw;
+            }
+
             if (sent == 0)
             {
+                _logger.Debug("Socket.Send returned 0 (Remote={0}, Remaining={1})", RemoteEndPoint, buffer.Length);
                 throw new MqttCommunicationException("The TCP connection is closed.");
             }
 

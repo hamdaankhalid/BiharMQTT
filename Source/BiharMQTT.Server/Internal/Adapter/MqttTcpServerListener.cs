@@ -160,9 +160,11 @@ public sealed class MqttTcpServerListener : IDisposable
                 if (socket.AcceptAsync(_acceptAsyncEventArgs))
                 {
                     // Pending — OnAcceptCompleted will resume the loop.
+                    _logger.Debug("AcceptAsync pending (Endpoint={0})", _localEndPoint);
                     return;
                 }
 
+                _logger.Debug("AcceptAsync completed synchronously (Endpoint={0})", _localEndPoint);
                 ProcessAccept(_acceptAsyncEventArgs);
             }
         }
@@ -178,6 +180,7 @@ public sealed class MqttTcpServerListener : IDisposable
 
     void OnAcceptCompleted(object sender, SocketAsyncEventArgs e)
     {
+        _logger.Debug("OnAcceptCompleted fired (SocketError={0}, Endpoint={1})", e.SocketError, _localEndPoint);
         ProcessAccept(e);
         StartAccept();
     }
@@ -273,7 +276,19 @@ public sealed class MqttTcpServerListener : IDisposable
                 using var timeoutCts = new CancellationTokenSource(_serverOptions.DefaultCommunicationTimeout);
                 using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, _listenerCancellationToken);
 
+                _logger.Debug(
+                    "TLS handshake starting (Remote={0}, ClientCertRequired={1}, RevocationCheck={2})",
+                    remoteEndPoint,
+                    _tlsOptions.ClientCertificateRequired,
+                    _tlsOptions.CheckCertificateRevocation);
+
                 await sslStream.AuthenticateAsServerAsync(authOptions, linkedCts.Token).ConfigureAwait(false);
+
+                _logger.Debug(
+                    "TLS handshake completed (Remote={0}, Protocol={1}, Cipher={2})",
+                    remoteEndPoint,
+                    sslStream.SslProtocol,
+                    sslStream.NegotiatedCipherSuite);
 
                 stream = sslStream;
 
@@ -293,7 +308,8 @@ public sealed class MqttTcpServerListener : IDisposable
             }
 
             // Channel takes ownership of socket, stream, and peer cert.
-            tcpChannel = new MqttTcpChannel(clientSocket, sslStream, _localEndPoint, remoteEndPoint, peerCertificate);
+            tcpChannel = new MqttTcpChannel(clientSocket, sslStream, _localEndPoint, remoteEndPoint, peerCertificate, _rootLogger);
+            _logger.Debug("Channel constructed (Remote={0}, TLS={1})", remoteEndPoint, sslStream != null);
 
             var bufferWriter = new MqttBufferWriter(_serverOptions.WriterBufferSize);
             var packetFormatterAdapter = new MqttPacketFormatterAdapter(bufferWriter);
@@ -329,12 +345,14 @@ public sealed class MqttTcpServerListener : IDisposable
             {
                 // MqttChannelAdapter.Dispose (via the using above) released the channel,
                 // which released socket/stream/peer cert. Nothing more to do.
+                _logger.Debug("Cleanup branch=adapter-owned (Remote={0})", remoteEndPoint);
             }
             else if (tcpChannel != null)
             {
                 // Channel was constructed but adapter ctor (or formatter/buffer-writer
                 // construction) threw before the using could take effect. Dispose the
                 // channel ourselves — it owns socket, stream, and peer cert.
+                _logger.Debug("Cleanup branch=orphaned-channel (Remote={0})", remoteEndPoint);
                 try { tcpChannel.Dispose(); }
                 catch (Exception disposeException)
                 {
@@ -343,6 +361,7 @@ public sealed class MqttTcpServerListener : IDisposable
             }
             else
             {
+                _logger.Debug("Cleanup branch=pre-channel (Remote={0}, HasSslStream={1}, HasStream={2})", remoteEndPoint, sslStream != null, stream != null);
                 try
                 {
                     // Pre-channel cleanup. On TLS-auth failure `stream` still points to the

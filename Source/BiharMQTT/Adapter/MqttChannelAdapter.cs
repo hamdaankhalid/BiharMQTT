@@ -271,10 +271,12 @@ public sealed class MqttChannelAdapter : Disposable
                 Interlocked.Add(ref _statistics._bytesReceived, buffer.Length);
                 return true;
             }
-            catch
+            catch (Exception ex)
             {
                 // Any send exception — fall back to queue path so the worker's
                 // standard error handling logs and tears down the connection.
+                _logger.Debug("TrySendInline write failed, falling back to queue (Remote={0}, Bytes={1}, Ex={2})",
+                    RemoteEndPoint, buffer.Length, ex.GetType().Name);
                 return false;
             }
         }
@@ -351,7 +353,17 @@ public sealed class MqttChannelAdapter : Disposable
     void OnFixedHeaderRead(int bytesRead, Exception error)
     {
         if (error != null) { DeliverError(error); return; }
-        if (bytesRead == 0) { DeliverEmpty(); return; }
+        if (bytesRead == 0)
+        {
+            if (_fhTotalRead > 0)
+            {
+                // Anomaly: peer half-closed mid-packet. We had byte 0 of the fixed
+                // header but never got byte 1 — that's not a clean disconnect.
+                _logger.Debug("Peer closed mid-fixed-header (Remote={0}, FhBytes={1})", RemoteEndPoint, _fhTotalRead);
+            }
+            DeliverEmpty();
+            return;
+        }
 
         _fhTotalRead += bytesRead;
         if (_fhTotalRead < 2)
@@ -398,6 +410,7 @@ public sealed class MqttChannelAdapter : Disposable
         _rlOffset++;
         if (_rlOffset > 3)
         {
+            _logger.Debug("Invalid remaining-length encoding (Remote={0}, Flags=0x{1:X2}, Bytes>4)", RemoteEndPoint, _flags);
             DeliverError(new MqttProtocolViolationException("Remaining length is invalid."));
             return;
         }
@@ -455,7 +468,15 @@ public sealed class MqttChannelAdapter : Disposable
     void OnBodyRead(int bytesRead, Exception error)
     {
         if (error != null) { DeliverError(error); return; }
-        if (bytesRead == 0) { DeliverEmpty(); return; }
+        if (bytesRead == 0)
+        {
+            // Anomaly: had a fixed header (so peer committed to a packet) but
+            // never finished sending the body. Track how much we got vs expected.
+            _logger.Debug("Peer closed mid-body (Remote={0}, Flags=0x{1:X2}, BodyOffset={2}, BodyLength={3})",
+                RemoteEndPoint, _flags, _bodyOffset, _bodyLength);
+            DeliverEmpty();
+            return;
+        }
 
         _bodyOffset += bytesRead;
         if (_bodyOffset < _bodyLength)
@@ -471,7 +492,7 @@ public sealed class MqttChannelAdapter : Disposable
     // Recurse for sync completions but break the stack chain past the threshold.
     // Keeps the hot path on the calling thread (cache-friendly) while still
     // bounded against pathological loopback streams.
-    static void ContinueOrPunt(Action next)
+    void ContinueOrPunt(Action next)
     {
         if (_syncCompletionDepth < MaxSyncCompletionChain)
         {
@@ -482,6 +503,8 @@ public sealed class MqttChannelAdapter : Disposable
         else
         {
             // Hand off to the thread pool so we unwind the current stack.
+            _logger.Debug("Sync completion chain exhausted, punting to thread pool (Remote={0}, Depth={1})",
+                RemoteEndPoint, _syncCompletionDepth);
             ThreadPool.UnsafeQueueUserWorkItem(static state => ((Action)state)(), next);
         }
     }
@@ -494,6 +517,9 @@ public sealed class MqttChannelAdapter : Disposable
         {
             PacketFormatterAdapter.DetectProtocolVersion(ref packet);
         }
+
+        _logger.Debug("DeliverPacket (Remote={0}, Flags=0x{1:X2}, Body={2}, Total={3})",
+            RemoteEndPoint, packet.FixedHeader, packet.Body.Count, packet.TotalLength);
 
         var cb = _packetCallback;
         _packetCallback = null;
@@ -509,6 +535,11 @@ public sealed class MqttChannelAdapter : Disposable
 
     void DeliverError(Exception ex)
     {
+        // Central funnel for every receive/decode anomaly. Logging once here
+        // beats instrumenting every throw site in the decoder.
+        _logger.Debug("DeliverError (Remote={0}, Ex={1}, FhBytes={2}, BodyOffset={3}, BodyLength={4}, Flags=0x{5:X2})",
+            RemoteEndPoint, ex.GetType().Name, _fhTotalRead, _bodyOffset, _bodyLength, _flags);
+
         var cb = _packetCallback;
         _packetCallback = null;
         cb?.Invoke(ReceivedMqttPacket.Empty, ex);

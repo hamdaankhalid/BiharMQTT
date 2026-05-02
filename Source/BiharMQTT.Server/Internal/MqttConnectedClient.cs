@@ -370,6 +370,8 @@ public sealed class MqttConnectedClient : IDisposable
         var decoder = ChannelAdapter.PacketFormatterAdapter.Decoder;
         Statistics.HandleReceivedPacket(receivedPacket.PacketType);
 
+        _logger.Debug("Client '{0}': Dispatching {1} (BodyBytes={2})", Id, receivedPacket.PacketType, receivedPacket.Body.Count);
+
         bool keepReceiving;
         try
         {
@@ -430,6 +432,7 @@ public sealed class MqttConnectedClient : IDisposable
                         break;
                     }
                 case MqttControlPacketType.PingResp:
+                    _logger.Debug("Client '{0}': Received unexpected PINGRESP from peer", Id);
                     throw new MqttProtocolViolationException("A PINGRESP Packet is sent by the Server to the Client in response to a PINGREQ Packet only.");
                 case MqttControlPacketType.Disconnect:
                     {
@@ -439,6 +442,8 @@ public sealed class MqttConnectedClient : IDisposable
                         return;
                     }
                 default:
+                    _logger.Debug("Client '{0}': Disallowed packet type from peer (PacketType={1}, BodyBytes={2})",
+                        Id, receivedPacket.PacketType, receivedPacket.Body.Count);
                     throw new MqttProtocolViolationException("Packet not allowed");
             }
         }
