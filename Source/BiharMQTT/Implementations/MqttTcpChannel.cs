@@ -94,6 +94,10 @@ public sealed class MqttTcpChannel : IDisposable
         // the socket above triggers the Completed event with OperationAborted,
         // and the user's callback observes the error.
         try { _recvSaea.Dispose(); } catch (ObjectDisposedException) { }
+
+        // Channel owns the peer cert (cloned from SslStream.RemoteCertificate at handshake).
+        // Releasing it here is what makes the per-connection X509Certificate2 leak go away.
+        try { ClientCertificate?.Dispose(); } catch (ObjectDisposedException) { }
     }
 
     /// <summary>

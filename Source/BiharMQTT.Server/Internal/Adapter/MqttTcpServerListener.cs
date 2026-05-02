@@ -214,7 +214,8 @@ public sealed class MqttTcpServerListener : IDisposable
         Stream stream = null;
         SslStream sslStream = null;
         EndPoint remoteEndPoint = null;
-        var ownershipTransferred = false;
+        MqttTcpChannel tcpChannel = null;
+        var channelOwnedByAdapter = false;
 
         try
         {
@@ -276,12 +277,12 @@ public sealed class MqttTcpServerListener : IDisposable
 
                 stream = sslStream;
 
-                peerCertificate = sslStream.RemoteCertificate as X509Certificate2;
-
-                // RemoteCertificate is documented to be an X509Certificate (the base type).
-                // On older paths the cast above can return null even when a peer cert is
-                // present; export-then-load gives us a usable X509Certificate2.
-                if (peerCertificate == null && sslStream.RemoteCertificate != null)
+                // Always clone via Export+Load so the channel owns its peer certificate.
+                // SslStream.RemoteCertificate is owned by SslStream — it gets disposed when
+                // SslStream does, so consumers reading ClientCertificate after the connection
+                // tears down would hit a use-after-free. Owning a copy lets MqttTcpChannel
+                // dispose it deterministically.
+                if (sslStream.RemoteCertificate != null)
                 {
 #if NET10_0_OR_GREATER
                     peerCertificate = X509CertificateLoader.LoadCertificate(sslStream.RemoteCertificate.Export(X509ContentType.Cert));
@@ -291,15 +292,18 @@ public sealed class MqttTcpServerListener : IDisposable
                 }
             }
 
-            // Channel takes ownership of both socket and stream (SslStream or null).
-            // After this point, MqttChannelAdapter.Dispose will clean up via MqttTcpChannel.Dispose.
-            var tcpChannel = new MqttTcpChannel(clientSocket, sslStream, _localEndPoint, remoteEndPoint, peerCertificate);
-            ownershipTransferred = true;
+            // Channel takes ownership of socket, stream, and peer cert.
+            tcpChannel = new MqttTcpChannel(clientSocket, sslStream, _localEndPoint, remoteEndPoint, peerCertificate);
 
             var bufferWriter = new MqttBufferWriter(_serverOptions.WriterBufferSize);
             var packetFormatterAdapter = new MqttPacketFormatterAdapter(bufferWriter);
 
+            // Adapter takes ownership of the channel only once construction succeeds — its
+            // Dispose (via the using below) is what releases socket/stream/peer cert. Setting
+            // channelOwnedByAdapter after the ctor returns guards against the adapter's
+            // constructor throwing and orphaning the already-built channel.
             using var clientAdapter = new MqttChannelAdapter(tcpChannel, packetFormatterAdapter, _rootLogger);
+            channelOwnedByAdapter = true;
             clientAdapter.AllowPacketFragmentation = _options.AllowPacketFragmentation;
             await _clientHandler(clientAdapter).ConfigureAwait(false);
         }
@@ -321,18 +325,32 @@ public sealed class MqttTcpServerListener : IDisposable
         }
         finally
         {
-            // Only clean up if ownership was NOT transferred to MqttTcpChannel.
-            // If transferred, the channel's Dispose (via MqttChannelAdapter) handles cleanup.
-            if (!ownershipTransferred)
+            if (channelOwnedByAdapter)
+            {
+                // MqttChannelAdapter.Dispose (via the using above) released the channel,
+                // which released socket/stream/peer cert. Nothing more to do.
+            }
+            else if (tcpChannel != null)
+            {
+                // Channel was constructed but adapter ctor (or formatter/buffer-writer
+                // construction) threw before the using could take effect. Dispose the
+                // channel ourselves — it owns socket, stream, and peer cert.
+                try { tcpChannel.Dispose(); }
+                catch (Exception disposeException)
+                {
+                    _logger.Error(disposeException, "Error while disposing orphaned MqttTcpChannel");
+                }
+            }
+            else
             {
                 try
                 {
-                    // On TLS-auth failure `stream` still points to the raw NetworkStream
-                    // and `sslStream` was never assigned to `stream` (that only happens after
-                    // a successful AuthenticateAsServerAsync). Dispose the SslStream — it
-                    // owns the inner NetworkStream (leaveInnerStreamOpen: false above) so
-                    // the stream chain is released. On non-TLS or pre-SslStream paths fall
-                    // back to disposing whatever `stream` we have.
+                    // Pre-channel cleanup. On TLS-auth failure `stream` still points to the
+                    // raw NetworkStream and `sslStream` was never assigned to `stream` (that
+                    // only happens after a successful AuthenticateAsServerAsync). Dispose
+                    // the SslStream — it owns the inner NetworkStream (leaveInnerStreamOpen:
+                    // false above) so the stream chain is released. On non-TLS or pre-
+                    // SslStream paths fall back to disposing whatever `stream` we have.
                     if (sslStream != null && !ReferenceEquals(stream, sslStream))
                     {
                         await sslStream.DisposeAsync().ConfigureAwait(false);
