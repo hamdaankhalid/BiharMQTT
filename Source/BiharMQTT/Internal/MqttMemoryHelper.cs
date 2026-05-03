@@ -17,11 +17,6 @@ public static class MqttMemoryHelper
         sequence.Slice(sourceIndex).CopyTo(destination.AsSpan(destinationIndex, length));
     }
 
-    public static bool SequenceEqual(ArraySegment<byte> source, ArraySegment<byte> target)
-    {
-        return source.AsSpan().SequenceEqual(target);
-    }
-
     public static bool SequenceEqual(ReadOnlySequence<byte> source, ReadOnlySequence<byte> target)
     {
         if (source.Length != target.Length)

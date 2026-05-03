@@ -5,14 +5,15 @@
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using BiharMQTT.Adapter;
 using BiharMQTT.Diagnostics.Logger;
 using BiharMQTT.Formatter;
-using BiharMQTT.Implementations;
 using BiharMQTT.Internal;
+using BiharMQTT.Server.Internal;
 
-namespace BiharMQTT.Server.Internal.Adapter;
+namespace BiharMQTT.Server;
 
 public sealed class MqttTcpServerListener : IDisposable
 {
@@ -22,7 +23,7 @@ public sealed class MqttTcpServerListener : IDisposable
     readonly MqttServerOptions _serverOptions;
     readonly MqttServerTcpEndpointBaseOptions _options;
     readonly MqttServerTlsTcpEndpointOptions _tlsOptions;
-    readonly Func<MqttChannelAdapter, Task> _clientHandler;
+    readonly MqttClientSessionsManager _clientSessionsManager;
 
     // Accept loop socket and event args
     SocketAsyncEventArgs _acceptAsyncEventArgs;
@@ -34,13 +35,13 @@ public sealed class MqttTcpServerListener : IDisposable
         AddressFamily addressFamily,
         MqttServerOptions serverOptions,
         MqttServerTcpEndpointBaseOptions tcpEndpointOptions,
-        Func<MqttChannelAdapter, Task> clientHandler,
+        MqttClientSessionsManager clientSessionsManager,
         IMqttNetLogger logger)
     {
         _addressFamily = addressFamily;
         _serverOptions = serverOptions ?? throw new ArgumentNullException(nameof(serverOptions));
         _options = tcpEndpointOptions ?? throw new ArgumentNullException(nameof(tcpEndpointOptions));
-        _clientHandler = clientHandler ?? throw new ArgumentNullException(nameof(clientHandler));
+        _clientSessionsManager = clientSessionsManager ?? throw new ArgumentNullException(nameof(clientSessionsManager));
         _rootLogger = logger;
         _logger = logger.WithSource(nameof(MqttTcpServerListener));
 
@@ -248,6 +249,11 @@ public sealed class MqttTcpServerListener : IDisposable
                 stream = new NetworkStream(clientSocket, ownsSocket: false);
                 sslStream = new SslStream(stream, leaveInnerStreamOpen: false, _tlsOptions.RemoteCertificateValidationCallback);
 
+                // mTLS is driven by _tlsOptions.ClientCertificateRequired. When set, the
+                // peer must present a client certificate; validation of that certificate
+                // is delegated to the user-supplied RemoteCertificateValidationCallback
+                // (passed to SslStream above). If no callback was supplied, the framework
+                // default applies (system trust store + the revocation policy below).
                 var authOptions = new SslServerAuthenticationOptions
                 {
                     ClientCertificateRequired = _tlsOptions.ClientCertificateRequired,
@@ -284,11 +290,25 @@ public sealed class MqttTcpServerListener : IDisposable
 
                 await sslStream.AuthenticateAsServerAsync(authOptions, linkedCts.Token).ConfigureAwait(false);
 
+                // Defense in depth for the mTLS path: AuthenticateAsServerAsync will
+                // already have failed the handshake when ClientCertificateRequired=true
+                // and the peer sent no cert. The explicit check here turns "somehow we
+                // got past the handshake without a peer cert" into a clear, named failure
+                // rather than a NullRef later when the validator or the channel try to
+                // read RemoteCertificate. Skipped on one-way TLS (flag off) where a null
+                // peer cert is the expected normal case.
+                if (_tlsOptions.ClientCertificateRequired && sslStream.RemoteCertificate == null)
+                {
+                    throw new AuthenticationException(
+                        "mTLS required: TLS handshake completed but the peer did not present a client certificate.");
+                }
+
                 _logger.Debug(
-                    "TLS handshake completed (Remote={0}, Protocol={1}, Cipher={2})",
+                    "TLS handshake completed (Remote={0}, Protocol={1}, Cipher={2}, ClientCert={3})",
                     remoteEndPoint,
                     sslStream.SslProtocol,
-                    sslStream.NegotiatedCipherSuite);
+                    sslStream.NegotiatedCipherSuite,
+                    sslStream.RemoteCertificate?.Subject ?? "<none>");
 
                 stream = sslStream;
 
@@ -311,8 +331,7 @@ public sealed class MqttTcpServerListener : IDisposable
             tcpChannel = new MqttTcpChannel(clientSocket, sslStream, _localEndPoint, remoteEndPoint, peerCertificate, _rootLogger);
             _logger.Debug("Channel constructed (Remote={0}, TLS={1})", remoteEndPoint, sslStream != null);
 
-            var bufferWriter = new MqttBufferWriter(_serverOptions.WriterBufferSize);
-            var packetFormatterAdapter = new MqttPacketFormatterAdapter(bufferWriter);
+            var packetFormatterAdapter = new MqttPacketFormatterAdapter(new MqttBufferWriter(_serverOptions.WriterBufferSize));
 
             // Adapter takes ownership of the channel only once construction succeeds — its
             // Dispose (via the using below) is what releases socket/stream/peer cert. Setting
@@ -321,21 +340,16 @@ public sealed class MqttTcpServerListener : IDisposable
             using var clientAdapter = new MqttChannelAdapter(tcpChannel, packetFormatterAdapter, _rootLogger);
             channelOwnedByAdapter = true;
             clientAdapter.AllowPacketFragmentation = _options.AllowPacketFragmentation;
-            await _clientHandler(clientAdapter).ConfigureAwait(false);
+            await _clientSessionsManager.HandleClientConnectionAsync(clientAdapter, _listenerCancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception)
         {
+            // It can happen that the listener socket is accessed after the cancellation token is already set and the listener socket is disposed.
             if (exception is ObjectDisposedException)
-            {
-                // It can happen that the listener socket is accessed after the cancellation token is already set and the listener socket is disposed.
                 return;
-            }
 
-            if (exception is SocketException socketException &&
-                socketException.SocketErrorCode == SocketError.OperationAborted)
-            {
+            if (exception is SocketException socketException && socketException.SocketErrorCode == SocketError.OperationAborted)
                 return;
-            }
 
             _logger.Error(exception, "Error while handling TCP client connection");
         }

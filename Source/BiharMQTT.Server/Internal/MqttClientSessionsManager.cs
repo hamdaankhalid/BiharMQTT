@@ -24,7 +24,7 @@ namespace BiharMQTT.Server.Internal;
 public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification, IDisposable
 {
     readonly Dictionary<string, MqttConnectedClient> _clients = new(4096);
-    readonly AsyncLock _createConnectionSyncRoot = new();
+    readonly SemaphoreSlim _createConnectionSyncRoot = new(1, 1);
     readonly MqttNetSourceLogger _logger;
     readonly MqttServerOptions _options;
     readonly MqttRetainedMessagesManager _retainedMessagesManager;
@@ -278,83 +278,18 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
         }
     }
 
-    public Task<IList<MqttClientStatus>> GetClientsStatus()
-    {
-        var result = new List<MqttClientStatus>();
-
-        lock (_clients)
-        {
-            foreach (var client in _clients.Values)
-            {
-                var clientStatus = new MqttClientStatus(client)
-                {
-                    Session = new MqttSessionStatus(client.Session)
-                };
-
-                result.Add(clientStatus);
-            }
-        }
-
-        return Task.FromResult((IList<MqttClientStatus>)result);
-    }
-
-    public Task<IList<MqttSessionStatus>> GetSessionsStatus()
-    {
-        var result = new List<MqttSessionStatus>();
-
-        _sessionsManagementLock.EnterReadLock();
-        try
-        {
-            foreach (var session in _sessionsStorage.ReadAllSessions())
-            {
-                var sessionStatus = new MqttSessionStatus(session);
-                result.Add(sessionStatus);
-            }
-        }
-        finally
-        {
-            _sessionsManagementLock.ExitReadLock();
-        }
-
-        return Task.FromResult((IList<MqttSessionStatus>)result);
-    }
-
-    public Task<MqttSessionStatus> GetSessionStatus(string id)
-    {
-        _sessionsManagementLock.EnterReadLock();
-        try
-        {
-            if (!_sessionsStorage.TryGetSession(id, out var session))
-            {
-                throw new InvalidOperationException($"Session with ID '{id}' not found.");
-            }
-
-            var sessionStatus = new MqttSessionStatus(session);
-            return Task.FromResult(sessionStatus);
-        }
-        finally
-        {
-            _sessionsManagementLock.ExitReadLock();
-        }
-    }
-
-    // Do MQTT handshake 
+    // Conn + ConnAck handshake sequence -> Create session object -> run client on it's own task onto the thread pool
     public async Task HandleClientConnectionAsync(MqttChannelAdapter channelAdapter, CancellationToken cancellationToken)
     {
         MqttConnectedClient connectedClient = null;
-
         try
         {
             var (success, connectPacket) = await ReceiveConnectPacket(channelAdapter, cancellationToken).ConfigureAwait(false);
-            if (!success)
-            {
-                // Nothing was received in time etc.
+            // Nothing was received in time or packet sent was not the expected connect packet
+            if (!success) 
                 return;
-            }
-
             bool clientIdWasEmpty = connectPacket.ClientId.Count == 0;
             MqttConnectReasonCode reason = ValidateConnection(ref connectPacket, channelAdapter);
-
             // User-supplied validator runs only after the broker's own checks
             // pass — re-using the function-pointer pattern from PublishInterceptor.
             // Lets a host re-add Firebase-token / username-password gating on the
@@ -395,19 +330,14 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
                 channelAdapter.SendPacket(failBuffer.Packet.AsMemory(), failBuffer.Payload, cancellationToken);
                 return;
             }
-
-            // Pass connAckPacket so that IsSessionPresent flag can be set if the client session already exists.
-            connectedClient = await CreateClientConnection(connectPacket, connAckPacket, channelAdapter).ConfigureAwait(false);
-
+            // Create new sesion data: Pass connAckPacket so that IsSessionPresent flag can be set if the client session already exists.
+            connectedClient = await CreateClientConnectionSession(connectPacket, connAckPacket, channelAdapter).ConfigureAwait(false);
+            // send connack
             MqttV5PacketEncoder connAckEncoder = channelAdapter.PacketFormatterAdapter.Encoder;
             MqttPacketBuffer connAckBuffer = connAckEncoder.Encode(ref connAckPacket);
             connectedClient.SendPacket(connAckBuffer.Packet, connAckBuffer.Payload, cancellationToken);
-
-            // Fire after CONNACK is on the wire and the session is installed,
-            // before the receive loop arms — so the host's connect-side bookkeeping
-            // sees a fully-installed client.
+            // Fire after CONNACK is on the wire and the session is installed, before the receive loop arms — so the host's connect-side bookkeeping sees a fully-installed client.
             InvokeClientConnected(_options, connectedClient);
-
             await connectedClient.RunAsync().ConfigureAwait(false);
         }
         catch (ObjectDisposedException)
@@ -551,7 +481,7 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
         return Task.CompletedTask;
     }
 
-    async Task<MqttConnectedClient> CreateClientConnection(
+    async Task<MqttConnectedClient> CreateClientConnectionSession(
         MqttConnectPacket connectPacket,
         MqttConnAckPacket connAckPacket,
         MqttChannelAdapter channelAdapter)
@@ -560,7 +490,8 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
         // Materialize it once and store it
         string clientId = SegmentToString(connectPacket.ClientId);
 
-        using (await _createConnectionSyncRoot.EnterAsync().ConfigureAwait(false))
+        await _createConnectionSyncRoot.WaitAsync().ConfigureAwait(false);
+        try
         {
             MqttSession oldSession;
             MqttConnectedClient oldConnectedClient;
@@ -625,6 +556,10 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
             }
 
             oldSession?.Dispose();
+        }
+        finally
+        {
+            _createConnectionSyncRoot.Release();
         }
 
         return connectedClient;
@@ -748,6 +683,7 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
             using var timeoutToken = new CancellationTokenSource(_options.DefaultCommunicationTimeout);
             using var effectiveCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(timeoutToken.Token, cancellationToken);
             receivedPacket = await channelAdapter.ReceivePacketAsync(effectiveCancellationToken.Token).ConfigureAwait(false);
+            // first call on recv should get us a connect mqttv5 packet
             if (receivedPacket.TotalLength > 0 && receivedPacket.PacketType == MqttControlPacketType.Connect)
             {
                 var decoder = channelAdapter.PacketFormatterAdapter.Decoder;
@@ -773,7 +709,6 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
             _logger.Warning("Client '{0}': Malformed CONNECT packet — {1}", channelAdapter.RemoteEndPoint, detail);
             throw;
         }
-
         _logger.Warning("Client '{0}': First received packet was no 'CONNECT' packet [MQTT-3.1.0-1].", channelAdapter.RemoteEndPoint);
         return (false, default);
     }

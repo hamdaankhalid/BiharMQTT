@@ -10,7 +10,7 @@ using System.Security.Cryptography.X509Certificates;
 using BiharMQTT.Diagnostics.Logger;
 using BiharMQTT.Exceptions;
 using BiharMQTT.Formatter;
-using BiharMQTT.Implementations;
+using BiharMQTT;
 using BiharMQTT.Internal;
 
 namespace BiharMQTT.Adapter;
@@ -492,7 +492,7 @@ public sealed class MqttChannelAdapter : Disposable
     // Recurse for sync completions but break the stack chain past the threshold.
     // Keeps the hot path on the calling thread (cache-friendly) while still
     // bounded against pathological loopback streams.
-    void ContinueOrPunt(Action next)
+    static void ContinueOrPunt(Action next)
     {
         if (_syncCompletionDepth < MaxSyncCompletionChain)
         {
@@ -503,8 +503,6 @@ public sealed class MqttChannelAdapter : Disposable
         else
         {
             // Hand off to the thread pool so we unwind the current stack.
-            _logger.Debug("Sync completion chain exhausted, punting to thread pool (Remote={0}, Depth={1})",
-                RemoteEndPoint, _syncCompletionDepth);
             ThreadPool.UnsafeQueueUserWorkItem(static state => ((Action)state)(), next);
         }
     }

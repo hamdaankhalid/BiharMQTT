@@ -73,31 +73,6 @@ public static class MqttPublishPacketFactory
         return packet;
     }
 
-    /// <summary>
-    ///     Creates a publish packet from a buffered message using a pre-snapshotted payload.
-    ///     The caller must supply a <paramref name="payloadSnapshot" /> that outlives any
-    ///     enqueued packets (i.e. a copied byte[] rather than the caller's pooled buffer).
-    /// </summary>
-    public static MqttPublishPacket Create(MqttBufferedApplicationMessage message, ReadOnlySequence<byte> payloadSnapshot)
-    {
-        var packet = new MqttPublishPacket
-        {
-            Topic = ToSegment(message.Topic),
-            Payload = payloadSnapshot,
-            QualityOfServiceLevel = message.QualityOfServiceLevel,
-            Retain = message.Retain,
-            ContentType = ToSegment(message.ContentType),
-            CorrelationData = ToSegment(message.CorrelationData),
-            MessageExpiryInterval = message.MessageExpiryInterval,
-            PayloadFormatIndicator = message.PayloadFormatIndicator,
-            ResponseTopic = ToSegment(message.ResponseTopic),
-            SubscriptionIdentifiers = message.SubscriptionIdentifiers,
-            UserProperties = message.UserProperties
-        };
-
-        return packet;
-    }
-
     public static MqttPublishPacket Create(MqttRetainedMessageMatch retainedMessage)
     {
         ArgumentNullException.ThrowIfNull(retainedMessage);

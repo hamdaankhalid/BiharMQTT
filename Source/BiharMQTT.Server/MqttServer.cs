@@ -1,23 +1,20 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
-// See the LICENSE file in the project root for more information.
-
 using System.Buffers;
 using System.Collections;
 using System.Collections.Concurrent;
+using System.Net;
+using System.Net.Sockets;
 using BiharMQTT.Adapter;
 using BiharMQTT.Diagnostics.Logger;
 using BiharMQTT.Internal;
-using BiharMQTT.Packets;
 using BiharMQTT.Protocol;
 using BiharMQTT.Server.Internal;
-using BiharMQTT.Server.Internal.Adapter;
 
 namespace BiharMQTT.Server;
 
 public class MqttServer : Disposable
 {
-    readonly MqttTcpServerAdapter _adapter;
+    readonly List<MqttTcpServerListener> _listeners = new List<MqttTcpServerListener>();
+
     readonly MqttClientSessionsManager _clientSessionsManager;
     readonly MqttServerKeepAliveMonitor _keepAliveMonitor;
     readonly MqttNetSourceLogger _logger;
@@ -27,19 +24,22 @@ public class MqttServer : Disposable
     readonly MqttSenderPool _senderPool;
     readonly IMqttNetLogger _rootLogger;
 
-    // HK TODO: give user ability to add an intercept here
-
     CancellationTokenSource _cancellationTokenSource;
-    bool _isStopping;
 
-    public MqttServer(MqttServerOptions options, MqttTcpServerAdapter adapter, IMqttNetLogger logger)
+
+    private static MqttServerClientDisconnectOptions DefaultClientDisconnectOptions { get; } = new MqttServerClientDisconnectOptions()
+    {
+        ReasonCode = MqttDisconnectReasonCode.ServerShuttingDown,
+        UserProperties = null,
+        ReasonString = null,
+        ServerReference = null
+    };
+
+    public MqttServer(MqttServerOptions options, IMqttNetLogger logger)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
 
-        ArgumentNullException.ThrowIfNull(adapter);
-
-        _adapter = adapter;
-
+        // Server creates adapter, adapter creates listener, we can wire TCP listener with this rather easily. 
         _rootLogger = logger ?? throw new ArgumentNullException(nameof(logger));
         _logger = logger.WithSource(nameof(MqttServer));
 
@@ -70,51 +70,12 @@ public class MqttServer : Disposable
     /// </summary>
     public IDictionary ServerSessionItems { get; } = new ConcurrentDictionary<object, object>();
 
-    public Task DeleteRetainedMessagesAsync()
-    {
-        ThrowIfNotStarted();
-
-        return _retainedMessagesManager?.ClearMessages() ?? Task.CompletedTask;
-    }
-
     public Task DisconnectClientAsync(string id, MqttServerClientDisconnectOptions options)
     {
         ArgumentNullException.ThrowIfNull(id);
         ArgumentNullException.ThrowIfNull(options);
-
         ThrowIfNotStarted();
-
         return _clientSessionsManager.GetClient(id).StopAsync(options);
-    }
-
-    public Task<IList<MqttClientStatus>> GetClientsAsync()
-    {
-        ThrowIfNotStarted();
-
-        return _clientSessionsManager.GetClientsStatus();
-    }
-
-    public Task<MqttApplicationMessage> GetRetainedMessageAsync(string topic)
-    {
-        ArgumentNullException.ThrowIfNull(topic);
-
-        ThrowIfNotStarted();
-
-        return _retainedMessagesManager.GetMessage(topic);
-    }
-
-    public Task<IList<MqttSessionStatus>> GetSessionsAsync()
-    {
-        ThrowIfNotStarted();
-
-        return _clientSessionsManager.GetSessionsStatus();
-    }
-
-    public Task<MqttSessionStatus> GetSessionAsync(string id)
-    {
-        ThrowIfNotStarted();
-
-        return _clientSessionsManager.GetSessionStatus(id);
     }
 
     /// <summary>
@@ -128,10 +89,10 @@ public class MqttServer : Disposable
     /// or <see cref="PublishInterceptResult.Reject"/>, fan-out is skipped silently.
     /// </para>
     /// <para>
-    /// Do not call this method re-entrantly from inside the interceptor.
+    /// Do not call this method re-entrantly from inside the interceptor. I'm pretty sure it would create some sorta recursive loop.
     /// </para>
     /// </summary>
-    public unsafe void Publish(
+    public void Publish(
         ReadOnlySpan<byte> topic,
         ReadOnlySequence<byte> payload,
         MqttQualityOfServiceLevel qualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce,
@@ -151,8 +112,6 @@ public class MqttServer : Disposable
     {
         ThrowIfStarted();
 
-        _isStopping = false;
-
         _cancellationTokenSource = new CancellationTokenSource();
         var cancellationToken = _cancellationTokenSource.Token;
 
@@ -160,99 +119,102 @@ public class MqttServer : Disposable
         _clientSessionsManager.Start();
         _keepAliveMonitor.Start(cancellationToken);
 
-        _adapter.Start(_options, _rootLogger, c => OnHandleClient(c, cancellationToken));
+        if (_options.DefaultEndpointOptions.IsEnabled)
+        {
+            RegisterTcpListeners(_options.DefaultEndpointOptions, _rootLogger, cancellationToken);
+        }
+
+        if (_options.TlsEndpointOptions?.IsEnabled == true)
+        {
+            if (_options.TlsEndpointOptions.CertificateProvider == null)
+            {
+                throw new ArgumentException("TLS certificate is not set.");
+            }
+
+            // Resolve the certificate once at boot so misconfiguration (null cert, bad blob,
+            // wrong PFX password) surfaces here instead of as a baffling first-handshake
+            // failure later. Hot-rotating providers that legitimately produce null until a
+            // later moment should override this — but those are not the common shape.
+            if (_options.TlsEndpointOptions.CertificateProvider.GetCertificate() == null)
+            {
+                throw new ArgumentException("TLS certificate provider returned a null certificate.");
+            }
+
+            RegisterTcpListeners(_options.TlsEndpointOptions, _rootLogger, cancellationToken);
+        }
 
         _logger.Info("Started");
     }
 
-    public async Task StopAsync(MqttServerStopOptions options)
+
+    void RegisterTcpListeners(MqttServerTcpEndpointBaseOptions tcpEndpointOptions, IMqttNetLogger logger, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(options);
+        if (!tcpEndpointOptions.BoundInterNetworkAddress.Equals(IPAddress.None))
+        {
+            var listenerV4 = new MqttTcpServerListener(AddressFamily.InterNetwork, _options, tcpEndpointOptions, _clientSessionsManager, logger);
+
+            if (listenerV4.Start(false, cancellationToken))
+            {
+                _listeners.Add(listenerV4);
+            }
+        }
+
+        if (!tcpEndpointOptions.BoundInterNetworkV6Address.Equals(IPAddress.None))
+        {
+            var listenerV6 = new MqttTcpServerListener(AddressFamily.InterNetworkV6, _options, tcpEndpointOptions, _clientSessionsManager, logger);
+
+            if (listenerV6.Start(false, cancellationToken))
+            {
+                _listeners.Add(listenerV6);
+            }
+        }
+    }
+
+    public async Task StopAsync()
+    {
+        var cts = _cancellationTokenSource;
+        if (cts == null)
+        {
+            return;
+        }
 
         try
         {
-            if (_cancellationTokenSource == null)
+            // Cancel first so listener accept loops break out and any in-flight
+            // HandleClientConnectionAsync (registered via the listener token in
+            // MqttClientSessionsManager) gets RequestStop. CloseAllConnections then
+            // sends graceful DISCONNECTs to the snapshot of currently-installed
+            // clients; the registration handles anything that raced past the snapshot.
+            cts.Cancel(false);
+            await _clientSessionsManager.CloseAllConnections(DefaultClientDisconnectOptions).ConfigureAwait(false);
+
+            foreach (var listener in _listeners)
             {
-                return;
+                listener.Dispose();
             }
-
-            _isStopping = true;
-
-            _cancellationTokenSource.Cancel(false);
-
-            await _clientSessionsManager.CloseAllConnections(options.DefaultClientDisconnectOptions).ConfigureAwait(false);
-
-            await _adapter.StopAsync().ConfigureAwait(false);
+            _listeners.Clear();
         }
         finally
         {
-            _cancellationTokenSource?.Dispose();
+            cts.Dispose();
             _cancellationTokenSource = null;
         }
 
         _logger.Info("Stopped");
     }
 
-    public Task SubscribeAsync(string clientId, ICollection<MqttTopicFilter> topicFilters)
-    {
-        ArgumentNullException.ThrowIfNull(clientId);
-        ArgumentNullException.ThrowIfNull(topicFilters);
-
-        foreach (var topicFilter in topicFilters)
-        {
-            var topicString = topicFilter.Topic.Count == 0 ? string.Empty : System.Text.Encoding.UTF8.GetString(topicFilter.Topic.Array!, topicFilter.Topic.Offset, topicFilter.Topic.Count);
-            MqttTopicValidator.ThrowIfInvalidSubscribe(topicString);
-        }
-
-        ThrowIfDisposed();
-        ThrowIfNotStarted();
-
-        return _clientSessionsManager.SubscribeAsync(clientId, topicFilters);
-    }
-
-    public Task UnsubscribeAsync(string clientId, ICollection<string> topicFilters)
-    {
-        ArgumentNullException.ThrowIfNull(clientId);
-        ArgumentNullException.ThrowIfNull(topicFilters);
-
-        ThrowIfDisposed();
-        ThrowIfNotStarted();
-
-        return _clientSessionsManager.UnsubscribeAsync(clientId, topicFilters);
-    }
-
-    public Task UpdateRetainedMessageAsync(MqttApplicationMessage retainedMessage)
-    {
-        ArgumentNullException.ThrowIfNull(retainedMessage);
-
-        ThrowIfDisposed();
-        ThrowIfNotStarted();
-
-        return _retainedMessagesManager?.UpdateMessage(string.Empty, retainedMessage);
-    }
 
     protected override void Dispose(bool disposing)
     {
         if (disposing)
         {
-            StopAsync(new MqttServerStopOptions()).GetAwaiter().GetResult();
-            _adapter.Dispose();
+            // Also cleans up tcp listeners
+            StopAsync().GetAwaiter().GetResult();
             _senderPool.Dispose();
             _nativeMemoryPool.Dispose();
         }
 
         base.Dispose(disposing);
-    }
-
-    // Callback called by Adapter when a new client connects
-    Task OnHandleClient(MqttChannelAdapter channelAdapter, CancellationToken cancellationToken)
-    {
-        if (_isStopping || !AcceptNewConnections)
-        {
-            return Task.CompletedTask;
-        }
-
-        return _clientSessionsManager.HandleClientConnectionAsync(channelAdapter, cancellationToken);
     }
 
     void ThrowIfNotStarted()

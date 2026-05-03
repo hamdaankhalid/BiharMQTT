@@ -113,13 +113,12 @@ public sealed class MqttConnectedClient : IDisposable
     public Task RunAsync()
     {
         _logger.Info("Client '{0}': Session started", Id);
-
         Session.LatestConnectPacket = ConnectPacket;
+
         Session.WillMessageSent = false;
-
         _runCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        IsRunning = true;
 
+        IsRunning = true;
         // Attach to the sender pool. After this, every Enqueue* on the session
         // schedules this client onto the pool's ready queue.
         Session.SetReadyNotifier(_scheduleSendCallback);

@@ -19,37 +19,4 @@ public static class TaskExtensions
             },
             TaskContinuationOptions.OnlyOnFaulted);
     }
-
-    public static async Task WaitAsync(this Task task, Task sender, MqttNetSourceLogger logger)
-    {
-        ArgumentNullException.ThrowIfNull(logger);
-
-        if (task == null)
-        {
-            return;
-        }
-
-        if (task == sender)
-        {
-            // Return here to avoid deadlocks, but first any eventual exception in the task
-            // must be handled to avoid not getting an unhandled task exception
-            if (!task.IsFaulted)
-            {
-                return;
-            }
-
-            // By accessing the Exception property the exception is considered handled and will
-            // not result in an unhandled task exception later by the finalizer
-            logger.Warning(task.Exception, "Error while waiting for background task.");
-            return;
-        }
-
-        try
-        {
-            await task.ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-        }
-    }
 }

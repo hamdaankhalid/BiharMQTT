@@ -11,12 +11,6 @@ using BiharMQTT.Protocol;
 
 namespace BiharMQTT.Formatter;
 
-/// <summary>
-///     This is a custom implementation of a memory stream which provides only BiharMQTT relevant features.
-///     The goal is to avoid lots of argument checks like in the original stream. The growth rule is the
-///     same as for the original MemoryStream in .net. Also this implementation allows accessing the internal
-///     buffer for all platforms and .net framework versions (which is not available at the regular MemoryStream).
-/// </summary>
 public sealed class MqttBufferWriter : IDisposable
 {
     const int EncodedStringMaxLength = 80;
@@ -92,31 +86,6 @@ public sealed class MqttBufferWriter : IDisposable
         ArgumentNullException.ThrowIfNull(propertyWriter);
 
         WriteBinary(propertyWriter._buffer, 0, propertyWriter.Length);
-    }
-
-    public void WriteBinary(byte[] value)
-    {
-        if (value == null || value.Length == 0)
-        {
-            EnsureAdditionalCapacity(2);
-
-            _buffer[_position] = 0;
-            _buffer[_position + 1] = 0;
-
-            IncreasePosition(2);
-        }
-        else
-        {
-            var valueLength = value.Length;
-
-            EnsureAdditionalCapacity(valueLength + 2);
-
-            _buffer[_position] = (byte)(valueLength >> 8);
-            _buffer[_position + 1] = (byte)valueLength;
-
-            MqttMemoryHelper.Copy(value, 0, _buffer, _position + 2, valueLength);
-            IncreasePosition(valueLength + 2);
-        }
     }
 
     public void WriteBinary(ArraySegment<byte> value)

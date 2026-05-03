@@ -18,13 +18,11 @@ public sealed class InterceptingSubscriptionEventArgs
     public InterceptingSubscriptionEventArgs(
         string clientId,
         string userName,
-        MqttSessionStatus sessionStatus,
         MqttTopicFilter topicFilter,
         List<MqttUserProperty> userProperties)
     {
         ClientId = clientId;
         UserName = userName;
-        SessionStatus = sessionStatus;
         TopicFilter = topicFilter;
         UserProperties = userProperties;
     }
@@ -32,8 +30,6 @@ public sealed class InterceptingSubscriptionEventArgs
     public string ClientId { get; }
 
     public string UserName { get; }
-
-    public MqttSessionStatus SessionStatus { get; }
 
     public MqttTopicFilter TopicFilter { get; set; }
 

@@ -443,7 +443,7 @@ public sealed class MqttClientSubscriptionsManager : IDisposable
         MqttTopicFilter topicFilter,
         List<MqttUserProperty> userProperties)
     {
-        var eventArgs = new InterceptingSubscriptionEventArgs(_session.Id, _session.UserName, new MqttSessionStatus(_session), topicFilter, userProperties);
+        var eventArgs = new InterceptingSubscriptionEventArgs(_session.Id, _session.UserName, topicFilter, userProperties);
 
         if (topicFilter.QualityOfServiceLevel == MqttQualityOfServiceLevel.AtMostOnce)
         {

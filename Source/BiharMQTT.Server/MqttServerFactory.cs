@@ -5,7 +5,6 @@
 using System.Diagnostics.CodeAnalysis;
 using BiharMQTT.Diagnostics.Logger;
 using BiharMQTT.Server.EnhancedAuthentication;
-using BiharMQTT.Server.Internal.Adapter;
 
 namespace BiharMQTT.Server;
 
@@ -23,7 +22,6 @@ public sealed class MqttServerFactory
 
     public IMqttNetLogger DefaultLogger { get; }
 
-    public IList<Func<MqttServerFactory, MqttTcpServerAdapter>> DefaultServerAdapters { get; } = [_ => new MqttTcpServerAdapter()];
 
     public IDictionary<object, object> Properties { get; } = new Dictionary<object, object>();
 
@@ -41,17 +39,12 @@ public sealed class MqttServerFactory
     {
         ArgumentNullException.ThrowIfNull(logger);
 
-        return new MqttServer(options, new MqttTcpServerAdapter(), logger);
+        return new MqttServer(options, logger);
     }
 
     public MqttServerClientDisconnectOptionsBuilder CreateMqttServerClientDisconnectOptionsBuilder()
     {
         return new MqttServerClientDisconnectOptionsBuilder();
-    }
-
-    public MqttServerStopOptionsBuilder CreateMqttServerStopOptionsBuilder()
-    {
-        return new MqttServerStopOptionsBuilder();
     }
 
     public MqttServerOptionsBuilder CreateServerOptionsBuilder()

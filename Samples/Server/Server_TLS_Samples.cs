@@ -23,7 +23,6 @@ public static class Server_TLS_Samples
          *
          * See sample "Run_Minimal_Server" for more details.
          */
-
         var mqttServerFactory = new MqttServerFactory();
 
         // This certificate is self signed so that
@@ -69,6 +68,7 @@ public static class Server_TLS_Samples
             (string)null!,
             X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable);
 #pragma warning restore SYSLIB0057
+
 
         return pfxCertificate;
     }

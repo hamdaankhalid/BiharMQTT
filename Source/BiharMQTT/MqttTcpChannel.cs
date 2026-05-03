@@ -9,7 +9,7 @@ using System.Security.Cryptography.X509Certificates;
 using BiharMQTT.Diagnostics.Logger;
 using BiharMQTT.Exceptions;
 
-namespace BiharMQTT.Implementations;
+namespace BiharMQTT;
 
 /// <summary>
 /// Invoked when a BeginReceive completes. Exactly one of (bytesRead, error) is

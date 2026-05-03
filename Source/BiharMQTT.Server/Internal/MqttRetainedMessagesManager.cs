@@ -7,11 +7,10 @@ using BiharMQTT.Internal;
 
 namespace BiharMQTT.Server.Internal;
 
-public sealed class MqttRetainedMessagesManager : IDisposable
+public sealed class MqttRetainedMessagesManager
 {
     readonly MqttNetSourceLogger _logger;
     readonly Dictionary<string, MqttApplicationMessage> _messages = new(4096);
-    readonly AsyncLock _storageAccessLock = new();
 
     public MqttRetainedMessagesManager(IMqttNetLogger logger)
     {
@@ -26,11 +25,6 @@ public sealed class MqttRetainedMessagesManager : IDisposable
         {
             _messages.Clear();
         }
-    }
-
-    public void Dispose()
-    {
-        _storageAccessLock.Dispose();
     }
 
     public Task<MqttApplicationMessage> GetMessage(string topic)

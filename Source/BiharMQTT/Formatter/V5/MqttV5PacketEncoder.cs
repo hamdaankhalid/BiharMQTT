@@ -14,16 +14,17 @@ public sealed class MqttV5PacketEncoder : IDisposable
 {
     const int FixedHeaderSize = 1;
 
+    // Actual payload writing space
     readonly MqttBufferWriter _bufferWriter;
-    readonly MqttV5PropertiesWriter _propertiesWriter = new(new MqttBufferWriter(Constants.PerBufferWriterMemoryAllocatedbytes));
-    private bool disposedValue;
+    // Properties have a separate writer with it's own buffer that we use to then copy data back into the bufferWriter
+    MqttV5PropertiesWriter _propertiesWriter = new MqttV5PropertiesWriter(new MqttBufferWriter(Constants.PropertiesWriterBufferAllocatedbytes));
 
+    private bool disposedValue;
 
     public MqttV5PacketEncoder(MqttBufferWriter bufferWriter)
     {
         _bufferWriter = bufferWriter;
     }
-
 
     public MqttPacketBuffer Encode(ref MqttConnectPacket packet)
     {
