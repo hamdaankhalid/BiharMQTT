@@ -448,38 +448,38 @@ public sealed class MqttClientSessionsManager : ISubscriptionChangedNotification
         }
     }
 
-    public async Task SubscribeAsync(string clientId, ICollection<MqttTopicFilter> topicFilters)
-    {
-        ArgumentNullException.ThrowIfNull(clientId);
-        ArgumentNullException.ThrowIfNull(topicFilters);
+    // public void SubscribeAsync(string clientId, ICollection<MqttTopicFilter> topicFilters)
+    // {
+    //     ArgumentNullException.ThrowIfNull(clientId);
+    //     ArgumentNullException.ThrowIfNull(topicFilters);
 
-        var fakeSubscribePacket = new MqttSubscribePacket { TopicFilters = new List<MqttTopicFilter>(topicFilters) };
+    //     var fakeSubscribePacket = new MqttSubscribePacket { TopicFilters = new List<MqttTopicFilter>(topicFilters) };
 
-        var clientSession = GetClientSession(clientId);
+    //     var clientSession = GetClientSession(clientId);
 
-        var subscribeResult = clientSession.Subscribe(ref fakeSubscribePacket);
-        if (subscribeResult.RetainedMessages == null)
-        {
-            return;
-        }
+    //     var subscribeResult = clientSession.Subscribe(ref fakeSubscribePacket);
+    //     if (subscribeResult.RetainedMessages == null)
+    //     {
+    //         return;
+    //     }
 
-        foreach (var retainedMessageMatch in subscribeResult.RetainedMessages)
-        {
-            var publishPacket = MqttPublishPacketFactory.Create(retainedMessageMatch);
-            clientSession.EnqueuePublishPacket(ref publishPacket);
-        }
-    }
+    //     foreach (var retainedMessageMatch in subscribeResult.RetainedMessages)
+    //     {
+    //         var publishPacket = MqttPublishPacketFactory.Create(retainedMessageMatch);
+    //         clientSession.EnqueuePublishPacket(ref publishPacket);
+    //     }
+    // }
 
-    public Task UnsubscribeAsync(string clientId, ICollection<string> topicFilters)
-    {
-        ArgumentNullException.ThrowIfNull(clientId);
-        ArgumentNullException.ThrowIfNull(topicFilters);
+    // public Task UnsubscribeAsync(string clientId, ICollection<string> topicFilters)
+    // {
+    //     ArgumentNullException.ThrowIfNull(clientId);
+    //     ArgumentNullException.ThrowIfNull(topicFilters);
 
-        var fakeUnsubscribePacket = new MqttUnsubscribePacket { TopicFilters = new List<ArraySegment<byte>>(topicFilters.Select(t => ToSegment(t))) };
+    //     var fakeUnsubscribePacket = new MqttUnsubscribePacket { TopicFilters = new List<ArraySegment<byte>>(topicFilters.Select(t => ToSegment(t))) };
 
-        GetClientSession(clientId).Unsubscribe(fakeUnsubscribePacket, CancellationToken.None);
-        return Task.CompletedTask;
-    }
+    //     GetClientSession(clientId).Unsubscribe(fakeUnsubscribePacket, CancellationToken.None);
+    //     return Task.CompletedTask;
+    // }
 
     async Task<MqttConnectedClient> CreateClientConnectionSession(
         MqttConnectPacket connectPacket,

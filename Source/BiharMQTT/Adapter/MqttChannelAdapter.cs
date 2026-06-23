@@ -513,7 +513,21 @@ public sealed class MqttChannelAdapter : Disposable
 
         if (PacketFormatterAdapter.ProtocolVersion == MqttProtocolVersion.Unknown)
         {
-            PacketFormatterAdapter.DetectProtocolVersion(ref packet);
+            // DetectProtocolVersion throws MqttProtocolViolationException on a malformed
+            // first packet (CONNECT body < 7 bytes, unsupported protocol level). DeliverPacket
+            // runs on a socket read-completion / thread-pool stack with no surrounding
+            // try/catch, so an escaping throw here is an unhandled exception that aborts the
+            // whole process. Funnel it through DeliverError like every other decode anomaly so
+            // it faults the awaited receive and closes just this one connection.
+            try
+            {
+                PacketFormatterAdapter.DetectProtocolVersion(ref packet);
+            }
+            catch (Exception ex)
+            {
+                DeliverError(ex);
+                return;
+            }
         }
 
         _logger.Debug("DeliverPacket (Remote={0}, Flags=0x{1:X2}, Body={2}, Total={3})",
