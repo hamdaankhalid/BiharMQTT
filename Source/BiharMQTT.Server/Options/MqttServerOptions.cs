@@ -25,6 +25,19 @@ public sealed class MqttServerOptions
     public MqttServerTlsTcpEndpointOptions TlsEndpointOptions { get; } = new();
 
     /// <summary>
+    ///     Plain MQTT over WebSocket (ws://). Disabled by default.
+    /// </summary>
+    public MqttServerTcpEndpointOptions WebSocketEndpointOptions { get; } = new() { Port = 8083, WebSocketPath = "/mqtt" };
+
+    /// <summary>
+    ///     MQTT over secure WebSocket (wss://). Disabled by default. When no
+    ///     <see cref="MqttServerTlsTcpEndpointOptions.CertificateProvider"/> is set here, the TLS settings
+    ///     (certificate, client-certificate, revocation, protocols, cipher suites) are taken from
+    ///     <see cref="TlsEndpointOptions"/> at start.
+    /// </summary>
+    public MqttServerTlsTcpEndpointOptions TlsWebSocketEndpointOptions { get; } = new() { Port = 8084, WebSocketPath = "/mqtt" };
+
+    /// <summary>
     ///     Gets or sets the default and initial size of the packet write buffer.
     ///     It is recommended to set this to a value close to the usual expected packet size * 1.5.
     ///     Do not change this value when no memory issues are experienced.

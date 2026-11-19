@@ -18,7 +18,7 @@ namespace BiharMQTT;
 /// </summary>
 public delegate void ReceiveCompletionHandler(int bytesRead, Exception error);
 
-public sealed class MqttTcpChannel : IDisposable
+public sealed class MqttTcpChannel : IDisposable, IMqttChannel
 {
     Socket _socket;
     SslStream _stream;

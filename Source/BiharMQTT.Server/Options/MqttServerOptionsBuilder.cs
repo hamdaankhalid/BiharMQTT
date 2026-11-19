@@ -32,6 +32,8 @@ public class MqttServerOptionsBuilder
     {
         _options.DefaultEndpointOptions.ConnectionBacklog = value;
         _options.TlsEndpointOptions.ConnectionBacklog = value;
+        _options.WebSocketEndpointOptions.ConnectionBacklog = value;
+        _options.TlsWebSocketEndpointOptions.ConnectionBacklog = value;
         return this;
     }
 
@@ -78,6 +80,33 @@ public class MqttServerOptionsBuilder
     public MqttServerOptionsBuilder WithDefaultEndpointReuseAddress()
     {
         _options.DefaultEndpointOptions.ReuseAddress = true;
+        return this;
+    }
+
+    /// <summary>
+    ///     Enables MQTT over WebSocket (ws://host:port/path). Port 0 lets the OS choose.
+    /// </summary>
+    public MqttServerOptionsBuilder WithWebSocketEndpoint(int port = 8083, string path = "/mqtt")
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+
+        _options.WebSocketEndpointOptions.IsEnabled = true;
+        _options.WebSocketEndpointOptions.Port = port;
+        _options.WebSocketEndpointOptions.WebSocketPath = path;
+        return this;
+    }
+
+    /// <summary>
+    ///     Enables MQTT over secure WebSocket (wss://host:port/path). Uses the certificate and TLS
+    ///     settings configured for the encrypted endpoint (WithEncryptionCertificate, WithClientCertificate, ...).
+    /// </summary>
+    public MqttServerOptionsBuilder WithEncryptedWebSocketEndpoint(int port = 8084, string path = "/mqtt")
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+
+        _options.TlsWebSocketEndpointOptions.IsEnabled = true;
+        _options.TlsWebSocketEndpointOptions.Port = port;
+        _options.TlsWebSocketEndpointOptions.WebSocketPath = path;
         return this;
     }
 
@@ -167,6 +196,8 @@ public class MqttServerOptionsBuilder
     {
         _options.DefaultEndpointOptions.KeepAlive = true;
         _options.TlsEndpointOptions.KeepAlive = true;
+        _options.WebSocketEndpointOptions.KeepAlive = true;
+        _options.TlsWebSocketEndpointOptions.KeepAlive = true;
         return this;
     }
 

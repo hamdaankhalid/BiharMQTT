@@ -1,11 +1,3 @@
-* Core: Used new language features across the entire library
-* Core: Performance improvements
-* Core: Added validations for variable byte integers which do not match the .NET uint perfectly
-* Client: Added support for pre-encoded UTF-8 binary buffers for user properties (#2228, thanks to @koepalex)
-* Server: Improved performance of retained messages when no event handler is attached (#2093, thanks to @zhaowgit)
-* Server: The event `InterceptingClientEnqueue` is now also called for retained messages (BREAKING CHANGE!)
-* Server: The local end point is now also exposed in the channel adapter (#2179)
-* Marked all projects as AOT compatible
-* Restored the strong name of the nugets
-* Embedded license file in all nugets (#2197, thanks to @JensNordenbro)
-* Added support for dotnet10
+* Packaging: BiharMQTT is now shipped as a single NuGet package, BiharMQTT.Server. The separate BiharMQTT core package has been merged into it and will no longer be published; remove the BiharMQTT reference and keep (or add) BiharMQTT.Server. Namespaces are unchanged.
+* Server: Added MQTT over WebSocket (ws://) and secure WebSocket (wss://) endpoints, served in-process without ASP.NET Core (WithWebSocketEndpoint / WithEncryptedWebSocketEndpoint). TCP, TLS, WS and WSS endpoints can run side by side on one MqttServer and share sessions and subscriptions.
+* Core: Introduced IMqttChannel; MqttChannelAdapter accepts any channel implementation.
