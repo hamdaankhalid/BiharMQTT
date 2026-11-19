@@ -3,6 +3,9 @@ set -euo pipefail
 
 # ── BiharMQTT local NuGet publish script ──
 #
+# Publishes the single BiharMQTT.Server package (the former BiharMQTT core
+# package was merged into it). See docs/Publishing.md.
+#
 # Usage:
 #   ./publish-nuget.sh <NUGET_API_KEY> <VERSION>
 #

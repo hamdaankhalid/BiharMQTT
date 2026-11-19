@@ -36,6 +36,14 @@ The receive callback chain, sender pool drain, and inline-send fast path are zer
 
 ## Getting Started
 
+BiharMQTT ships as a single NuGet package:
+
+```bash
+dotnet add package BiharMQTT.Server
+```
+
+> Upgrading from a version that used two packages? Remove the `BiharMQTT` package reference and keep `BiharMQTT.Server`. The core package has been merged into it and is no longer published; namespaces are unchanged.
+
 `Samples/Program.cs` starts a plain TCP broker on port 1883:
 
 ```csharp

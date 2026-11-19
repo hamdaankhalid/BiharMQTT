@@ -1,5 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+    <Target Name="ImportReleaseNotes" BeforeTargets="GenerateNuspec">
+        <ReadLinesFromFile File="../ReleaseNotes.md">
+            <Output TaskParameter="Lines" ItemName="ReleaseNotes"/>
+        </ReadLinesFromFile>
+        <PropertyGroup>
+            <PackageReleaseNotes>@(ReleaseNotes, '%0a')</PackageReleaseNotes>
+        </PropertyGroup>
+    </Target>
+
     <PropertyGroup>
         <AssemblyName>BiharMQTT.Server</AssemblyName>
         <RootNamespace>BiharMQTT.Server</RootNamespace>
@@ -7,13 +16,13 @@
 
         <IsPackable>true</IsPackable>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
-        <Description>This is the server implementation of BiharMQTT.</Description>
+        <Description>BiharMQTT is a high-performance, low-allocation MQTT v5 broker for .NET (a fork of MQTTnet) serving MQTT over TCP, TLS, WebSocket and secure WebSocket. This single package contains the complete broker; the former BiharMQTT core package has been merged into it.</Description>
         <PackageId>BiharMQTT.Server</PackageId>
-        <PackageTags>MQTT Message Queue Telemetry Transport MQTTClient MQTTServer Server MQTTBroker Broker NETStandard IoT InternetOfThings Messaging Hardware Arduino Sensor Actuator M2M ESP Smart Home Cities Automation Xamarin Blazor</PackageTags>
+        <PackageTags>MQTT MQTTServer MQTTBroker Broker Server MQTTv5 WebSocket IoT InternetOfThings Messaging M2M</PackageTags>
     </PropertyGroup>
 
-    <ItemGroup>
-        <ProjectReference Include="../BiharMQTT/BiharMQTT.csproj" />
-    </ItemGroup>
+    <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+        <DebugType>Full</DebugType>
+    </PropertyGroup>
 
 </Project>
