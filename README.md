@@ -1,6 +1,6 @@
 # BiharMQTT
 
-**BiharMQTT is a fork of [MQTTnet](https://github.com/dotnet/MQTTnet)** — a high-performance .NET MQTT library — stripped down to a TCP-only broker with a focus on eliminating heap allocations on the publish hot path.
+**BiharMQTT is a fork of [MQTTnet](https://github.com/dotnet/MQTTnet)** — a high-performance .NET MQTT library — stripped down to a lean TCP + WebSocket broker with a focus on eliminating heap allocations on the publish hot path.
 
 > Upstream: [dotnet/MQTTnet](https://github.com/dotnet/MQTTnet) · License: MIT
 
@@ -19,7 +19,8 @@ The broker has been substantially rewritten. Architecture details are in [`docs/
 | **Per-session bus** | Three priority partitions (Health / Control / Data) backed by `PreAllocatedQ<T>` over native memory (`HugeNativeMemoryPool`). No GC interaction on the per-message path. |
 | **Publish interceptor** | `unsafe delegate*<in MqttPublishInterceptArgs, PublishInterceptResult>` static-only function-pointer hook on `MqttServerOptions`. `Allow` / `Consume` / `Reject`. The args type is a `readonly ref struct` — buffers borrowed only for the call. |
 | **Server-side publish** | `MqttServer.Publish(ReadOnlySpan<byte> topic, ReadOnlySequence<byte> payload, …)` — zero-alloc inject API with the same lifetime contract as the interceptor. |
-| **Removed from upstream** | All ASP.NET Core / Kestrel / WebSocket integration; `IMqttServerAdapter` / `IMqttChannelAdapter` interfaces; the entire event/interceptor surface (`InterceptingPublishAsync` & friends); the shared `MessageRingBuffer` (replaced by per-session buses). |
+| **WebSocket transport** | MQTT over `ws://` and `wss://` (RFC 6455, subprotocol `mqtt`) added back without ASP.NET Core / Kestrel: the existing TCP listener performs the HTTP Upgrade handshake in-process and hands a BCL `WebSocket` to `MqttWebSocketChannel`, which plugs into the same `IMqttChannel` / `MqttChannelAdapter` path as TCP. `wss` reuses the TLS endpoint's certificate and mTLS settings. Trade-off: WebSocket writes are blocking `SendAsync` calls and skip the inline-send fast path. |
+| **Removed from upstream** | All ASP.NET Core / Kestrel integration (WebSocket is now served in-process, see above); `IMqttServerAdapter` / `IMqttChannelAdapter` interfaces; the entire event/interceptor surface (`InterceptingPublishAsync` & friends); the shared `MessageRingBuffer` (replaced by per-session buses). |
 
 ### Allocation Profile
 
@@ -51,6 +52,22 @@ await mqttServer.StartAsync();
 static PublishInterceptResult AllowAllInterceptor(in MqttPublishInterceptArgs args)
     => PublishInterceptResult.Allow;
 ```
+
+### TCP and WebSocket in one server
+
+A single `MqttServer` can serve every transport at once, each on its own port. All endpoints share the same sessions, subscriptions and retained messages, so a browser on WebSocket and a device on TCP can talk to each other directly:
+
+```csharp
+var options = new MqttServerOptionsBuilder()
+    .WithDefaultEndpoint()                  // tcp://   :1883
+    .WithEncryptedEndpoint()                // mqtts:// :8883
+    .WithEncryptionCertificate(cert)
+    .WithWebSocketEndpoint()                // ws://    :8083/mqtt
+    .WithEncryptedWebSocketEndpoint()       // wss://   :8084/mqtt (reuses the TLS cert)
+    .Build();
+```
+
+`WithWebSocketEndpoint(port, path)` and `WithEncryptedWebSocketEndpoint(port, path)` take an optional port and URL path. Clients must offer the `mqtt` subprotocol (e.g. MQTT.js: `mqtt.connect('ws://host:8083/mqtt')`).
 
 `TestClient/Program.cs` is a load generator using the upstream MQTTnet client.
 

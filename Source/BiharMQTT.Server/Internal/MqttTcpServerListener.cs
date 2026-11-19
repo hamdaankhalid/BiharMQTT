@@ -5,6 +5,7 @@
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
+using System.Net.WebSockets;
 using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using BiharMQTT.Adapter;
@@ -63,7 +64,7 @@ public sealed class MqttTcpServerListener : IDisposable
 
             _localEndPoint = new IPEndPoint(boundIp, _options.Port);
 
-            _logger.Info("Starting TCP listener (Endpoint={0}, TLS={1})", _localEndPoint, _tlsOptions?.CertificateProvider != null);
+            _logger.Info("Starting TCP listener (Endpoint={0}, TLS={1}, WebSocketPath=" + (_options.WebSocketPath ?? "<none>") + ")", _localEndPoint, _tlsOptions?.CertificateProvider != null);
 
             _socket = new Socket(_addressFamily, SocketType.Stream, ProtocolType.Tcp);
 
@@ -218,7 +219,7 @@ public sealed class MqttTcpServerListener : IDisposable
         Stream stream = null;
         SslStream sslStream = null;
         EndPoint remoteEndPoint = null;
-        MqttTcpChannel tcpChannel = null;
+        IMqttChannel channel = null;
         var channelOwnedByAdapter = false;
 
         try
@@ -327,9 +328,45 @@ public sealed class MqttTcpServerListener : IDisposable
                 }
             }
 
-            // Channel takes ownership of socket, stream, and peer cert.
-            tcpChannel = new MqttTcpChannel(clientSocket, sslStream, _localEndPoint, remoteEndPoint, peerCertificate, _rootLogger);
-            _logger.Debug("Channel constructed (Remote={0}, TLS={1})", remoteEndPoint, sslStream != null);
+            if (_options.WebSocketPath != null)
+            {
+                // WebSocket runs on top of whatever stream we have: the authenticated
+                // SslStream for wss, or a fresh NetworkStream for ws. Assigning it to
+                // `stream` lets the pre-channel cleanup path dispose it on failure.
+                stream ??= new NetworkStream(clientSocket, ownsSocket: false);
+
+                using (var timeoutCts = new CancellationTokenSource(_serverOptions.DefaultCommunicationTimeout))
+                using (var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, _listenerCancellationToken))
+                {
+                    var handshake = await MqttWebSocketHandshake.AcceptAsync(stream, _options.WebSocketPath, linkedCts.Token).ConfigureAwait(false);
+                    if (!handshake.Success)
+                    {
+                        _logger.Warning(null, "WebSocket handshake rejected (Remote={0}, Reason={1})", remoteEndPoint, handshake.Error);
+                        peerCertificate?.Dispose();
+                        return;
+                    }
+
+                    _logger.Debug("WebSocket handshake completed (Remote={0}, SubProtocol={1})", remoteEndPoint, handshake.SubProtocol);
+
+                    var webSocket = WebSocket.CreateFromStream(stream, new WebSocketCreationOptions
+                    {
+                        IsServer = true,
+                        SubProtocol = handshake.SubProtocol,
+                        // MQTT keep-alive already detects dead peers; no WS pings.
+                        KeepAliveInterval = TimeSpan.Zero
+                    });
+
+                    // Channel takes ownership of the WebSocket (and its stream), socket and peer cert.
+                    channel = new MqttWebSocketChannel(webSocket, clientSocket, _localEndPoint, remoteEndPoint, peerCertificate, sslStream != null, _rootLogger);
+                }
+            }
+            else
+            {
+                // Channel takes ownership of socket, stream, and peer cert.
+                channel = new MqttTcpChannel(clientSocket, sslStream, _localEndPoint, remoteEndPoint, peerCertificate, _rootLogger);
+            }
+
+            _logger.Debug("Channel constructed (Remote={0}, TLS={1}, WebSocket={2})", remoteEndPoint, sslStream != null, _options.WebSocketPath != null);
 
             var packetFormatterAdapter = new MqttPacketFormatterAdapter(new MqttBufferWriter(_serverOptions.WriterBufferSize));
 
@@ -337,7 +374,7 @@ public sealed class MqttTcpServerListener : IDisposable
             // Dispose (via the using below) is what releases socket/stream/peer cert. Setting
             // channelOwnedByAdapter after the ctor returns guards against the adapter's
             // constructor throwing and orphaning the already-built channel.
-            using var clientAdapter = new MqttChannelAdapter(tcpChannel, packetFormatterAdapter, _rootLogger);
+            using var clientAdapter = new MqttChannelAdapter(channel, packetFormatterAdapter, _rootLogger);
             channelOwnedByAdapter = true;
             clientAdapter.AllowPacketFragmentation = _options.AllowPacketFragmentation;
             await _clientSessionsManager.HandleClientConnectionAsync(clientAdapter, _listenerCancellationToken).ConfigureAwait(false);
@@ -361,16 +398,16 @@ public sealed class MqttTcpServerListener : IDisposable
                 // which released socket/stream/peer cert. Nothing more to do.
                 _logger.Debug("Cleanup branch=adapter-owned (Remote={0})", remoteEndPoint);
             }
-            else if (tcpChannel != null)
+            else if (channel != null)
             {
                 // Channel was constructed but adapter ctor (or formatter/buffer-writer
                 // construction) threw before the using could take effect. Dispose the
                 // channel ourselves — it owns socket, stream, and peer cert.
                 _logger.Debug("Cleanup branch=orphaned-channel (Remote={0})", remoteEndPoint);
-                try { tcpChannel.Dispose(); }
+                try { channel.Dispose(); }
                 catch (Exception disposeException)
                 {
-                    _logger.Error(disposeException, "Error while disposing orphaned MqttTcpChannel");
+                    _logger.Error(disposeException, "Error while disposing orphaned channel");
                 }
             }
             else

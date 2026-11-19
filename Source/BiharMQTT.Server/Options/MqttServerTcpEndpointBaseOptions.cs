@@ -68,4 +68,11 @@ public abstract class MqttServerTcpEndpointBaseOptions
     ///     The value _null_ indicates that the OS and framework defaults should be used.
     /// </summary>
     public int? TcpKeepAliveTime { get; set; }
+
+    /// <summary>
+    ///     When set, the endpoint speaks MQTT over WebSocket (RFC 6455, subprotocol "mqtt") and
+    ///     only accepts upgrade requests for this exact path (e.g. "/mqtt").
+    ///     The value _null_ (default) means raw MQTT over TCP.
+    /// </summary>
+    public string WebSocketPath { get; set; }
 }

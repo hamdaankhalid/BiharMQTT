@@ -34,7 +34,7 @@ public sealed class MqttChannelAdapter : Disposable
 
     [ThreadStatic] static int _syncCompletionDepth;
 
-    readonly MqttTcpChannel _channel;
+    readonly IMqttChannel _channel;
     readonly byte[] _fixedHeaderBuffer = new byte[2];
     readonly MqttNetSourceLogger _logger;
     readonly object _syncRoot = new();
@@ -71,7 +71,7 @@ public sealed class MqttChannelAdapter : Disposable
     int _bodyOffset;
     int _totalReceivedHeaderBytes;
 
-    public MqttChannelAdapter(MqttTcpChannel channel, MqttPacketFormatterAdapter packetFormatterAdapter, IMqttNetLogger logger)
+    public MqttChannelAdapter(IMqttChannel channel, MqttPacketFormatterAdapter packetFormatterAdapter, IMqttNetLogger logger)
     {
         _channel = channel ?? throw new ArgumentNullException(nameof(channel));
 

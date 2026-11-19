@@ -126,26 +126,53 @@ public class MqttServer : Disposable
 
         if (_options.TlsEndpointOptions?.IsEnabled == true)
         {
-            if (_options.TlsEndpointOptions.CertificateProvider == null)
-            {
-                throw new ArgumentException("TLS certificate is not set.");
-            }
-
-            // Resolve the certificate once at boot so misconfiguration (null cert, bad blob,
-            // wrong PFX password) surfaces here instead of as a baffling first-handshake
-            // failure later. Hot-rotating providers that legitimately produce null until a
-            // later moment should override this — but those are not the common shape.
-            if (_options.TlsEndpointOptions.CertificateProvider.GetCertificate() == null)
-            {
-                throw new ArgumentException("TLS certificate provider returned a null certificate.");
-            }
-
+            ValidateTlsEndpoint(_options.TlsEndpointOptions);
             RegisterTcpListeners(_options.TlsEndpointOptions, _rootLogger, cancellationToken);
+        }
+
+        if (_options.WebSocketEndpointOptions?.IsEnabled == true)
+        {
+            RegisterTcpListeners(_options.WebSocketEndpointOptions, _rootLogger, cancellationToken);
+        }
+
+        if (_options.TlsWebSocketEndpointOptions?.IsEnabled == true)
+        {
+            var wss = _options.TlsWebSocketEndpointOptions;
+            if (wss.CertificateProvider == null)
+            {
+                var tls = _options.TlsEndpointOptions;
+                wss.CertificateProvider = tls.CertificateProvider;
+                wss.ClientCertificateRequired = tls.ClientCertificateRequired;
+                wss.CheckCertificateRevocation = tls.CheckCertificateRevocation;
+                wss.RemoteCertificateValidationCallback = tls.RemoteCertificateValidationCallback;
+                wss.SslProtocol = tls.SslProtocol;
+                wss.CipherSuitesPolicy = tls.CipherSuitesPolicy;
+            }
+
+            ValidateTlsEndpoint(wss);
+            RegisterTcpListeners(wss, _rootLogger, cancellationToken);
         }
 
         _logger.Info("Started");
     }
 
+
+    static void ValidateTlsEndpoint(MqttServerTlsTcpEndpointOptions tlsOptions)
+    {
+        if (tlsOptions.CertificateProvider == null)
+        {
+            throw new ArgumentException("TLS certificate is not set.");
+        }
+
+        // Resolve the certificate once at boot so misconfiguration (null cert, bad blob,
+        // wrong PFX password) surfaces here instead of as a baffling first-handshake
+        // failure later. Hot-rotating providers that legitimately produce null until a
+        // later moment should override this — but those are not the common shape.
+        if (tlsOptions.CertificateProvider.GetCertificate() == null)
+        {
+            throw new ArgumentException("TLS certificate provider returned a null certificate.");
+        }
+    }
 
     void RegisterTcpListeners(MqttServerTcpEndpointBaseOptions tcpEndpointOptions, IMqttNetLogger logger, CancellationToken cancellationToken)
     {
